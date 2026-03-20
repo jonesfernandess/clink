@@ -20,11 +20,13 @@ export function startBot(configOverride) {
   const allowed = config.allowedUsers.map(Number);
   const startTime = Date.now();
   const chatLocks = new Map();
+  const pendingApprovals = new Map(); // approvalId -> { chatId, text, resolve }
+  const unlockedChats = new Set();   // chats that approved permissions (until /lock or /new)
 
-  const IDLE_TIMEOUT = 180_000;       // kill after 3 min without ANY stdout data
-  const PROGRESS_INTERVAL = 10_000;   // send/edit progress every 10s
+  const IDLE_TIMEOUT = 180_000;
+  const PROGRESS_INTERVAL = 10_000;
+  const APPROVAL_TIMEOUT = 120_000;
 
-  // Register commands so they appear in Telegram UI
   bot.setMyCommands([
     { command: "new", description: msg.cmdNewDesc },
     { command: "sessions", description: msg.cmdSessionsDesc || "List sessions" },
@@ -53,7 +55,117 @@ export function startBot(configOverride) {
     return next;
   }
 
-  function callClaude(prompt, chatId) {
+  // ── Intent classifier — quick haiku call to decide if approval is needed ──
+
+  function classifyIntent(userText) {
+    return new Promise((resolve) => {
+      const classifyPrompt = `Classify this message. Reply with a single word: CHAT or ACTION.
+
+CHAT = greetings, questions, conversation, explanations (no tools needed)
+ACTION = create/edit/delete files, run commands, install packages, git, system changes
+
+Message: """${userText}"""
+
+Classification:`;
+
+      const proc = spawn("claude", [
+        "-p", "--model", "haiku",
+        "--dangerously-skip-permissions",
+        classifyPrompt,
+      ], {
+        cwd: config.workingDir,
+        env: { ...process.env, LANG: "en_US.UTF-8" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let output = "";
+      let stderrOut = "";
+      let settled = false;
+
+      const ts = () => `[${new Date().toISOString()}]`;
+
+      console.log(`${ts()} 🔍 classifier: starting haiku for "${userText.slice(0, 60)}"`);
+
+      proc.stdout.on("data", (d) => output += d);
+      proc.stderr.on("data", (d) => stderrOut += d);
+
+      proc.on("close", (code) => {
+        if (settled) return;
+        settled = true;
+        const raw = output.trim();
+        const result = raw.toUpperCase();
+        const isChat = result.includes("CHAT") && !result.includes("ACTION");
+
+        console.log(`${ts()} 🔍 classifier: exit=${code} raw="${raw}" stderr="${stderrOut.trim().slice(0, 200)}" → ${isChat ? "CHAT ✓" : "ACTION 🔐"}`);
+        resolve(isChat ? "chat" : "action");
+      });
+
+      proc.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        console.log(`${ts()} 🔍 classifier: spawn error: ${err.message} → ACTION (fallback)`);
+        resolve("action");
+      });
+
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { proc.kill(); } catch {}
+        console.log(`${ts()} 🔍 classifier: timeout (20s) → ACTION (fallback)`);
+        resolve("action");
+      }, 20000);
+    });
+  }
+
+  // ── Ask for approval via Telegram before running Claude ──
+
+  function requestApproval(chatId, userText) {
+    return new Promise((resolve) => {
+      const approvalId = randomUUID().slice(0, 8);
+      const preview = userText.length > 200 ? userText.slice(0, 200) + "…" : userText;
+
+      const timer = setTimeout(() => {
+        if (pendingApprovals.has(approvalId)) {
+          pendingApprovals.delete(approvalId);
+          resolve(false);
+          bot.sendMessage(chatId, msg.permTimedOut || "Auto-denied (timeout)").catch(() => {});
+        }
+      }, APPROVAL_TIMEOUT);
+
+      pendingApprovals.set(approvalId, { chatId, resolve, timer });
+
+      bot.sendMessage(chatId,
+        `🔐 *${msg.permTitle || "Permission"}*\n\n${preview}\n\n${msg.permApprovalHint || "Allow Claude to use all tools for this request?"}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: `✅ ${msg.permAllow || "Allow"}`, callback_data: `approve:${approvalId}:y` },
+              { text: `❌ ${msg.permDeny || "Deny"}`, callback_data: `approve:${approvalId}:n` },
+            ]],
+          },
+        }
+      ).catch(() => {
+        bot.sendMessage(chatId,
+          `🔐 ${msg.permTitle || "Permission"}\n\n${preview}\n\n${msg.permApprovalHint || "Allow Claude to use all tools for this request?"}`,
+          {
+            reply_markup: {
+              inline_keyboard: [[
+                { text: `✅ ${msg.permAllow || "Allow"}`, callback_data: `approve:${approvalId}:y` },
+                { text: `❌ ${msg.permDeny || "Deny"}`, callback_data: `approve:${approvalId}:n` },
+              ]],
+            },
+          }
+        ).catch(() => {});
+      });
+
+      console.log(`[${new Date().toISOString()}] Approval ${approvalId} sent for chat ${chatId}`);
+    });
+  }
+
+  // ── Call Claude Code CLI ──
+
+  function callClaude(prompt, chatId, skipPerms) {
     return new Promise((resolve, reject) => {
       const args = [
         "-p",
@@ -61,11 +173,10 @@ export function startBot(configOverride) {
         "--output-format", "stream-json",
         "--include-partial-messages",
       ];
-      if (config.skipPermissions) args.push("--dangerously-skip-permissions");
+      if (skipPerms) args.push("--dangerously-skip-permissions");
       if (config.model) args.push("--model", config.model);
       if (config.systemPrompt) args.push("--append-system-prompt", config.systemPrompt);
 
-      // Session management: resume active session or assign explicit ID for new ones
       let activeSessionId = getActiveSession(chatId);
       if (activeSessionId) {
         args.push("--resume", activeSessionId);
@@ -84,17 +195,16 @@ export function startBot(configOverride) {
       });
 
       let resultText = "";
-      let activities = [];        // log of what claude is doing
+      let activities = [];
       let currentTool = null;
       let currentToolName = null;
       let currentToolInput = "";
-      let createdFiles = [];      // file paths from Write/Edit tool_use
+      let createdFiles = [];
       let settled = false;
       let lineBuf = "";
       let stderr = "";
       let lastActivityCount = 0;
 
-      // ── rolling idle timeout ──
       let idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
 
       function resetIdle() {
@@ -113,18 +223,15 @@ export function startBot(configOverride) {
       function addActivity(icon, text) {
         const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         activities.push(`${icon} [${ts}] ${text}`);
-        // keep last 15 activities
         if (activities.length > 15) activities = activities.slice(-15);
       }
 
-      // ── parse stream-json events ──
       function handleEvent(line) {
         if (!line.trim()) return;
 
         let ev;
         try { ev = JSON.parse(line); } catch { return; }
 
-        // system events (init, api retries, etc)
         if (ev.type === "system") {
           addActivity("⚙️", ev.message || ev.subtype || "system event");
         }
@@ -132,15 +239,11 @@ export function startBot(configOverride) {
         if (ev.type === "stream_event") {
           const e = ev.event;
 
-          // text being generated
           if (e?.delta?.type === "text_delta" && e.delta.text) {
             resultText += e.delta.text;
-            if (!currentTool) {
-              currentTool = "writing";
-            }
+            if (!currentTool) currentTool = "writing";
           }
 
-          // tool use started
           if (e?.type === "content_block_start" && e.content_block?.type === "tool_use") {
             const name = e.content_block.name || "tool";
             currentTool = name;
@@ -149,18 +252,15 @@ export function startBot(configOverride) {
             addActivity("🔧", name);
           }
 
-          // text block started
           if (e?.type === "content_block_start" && e.content_block?.type === "text") {
             currentTool = "writing";
             addActivity("✍️", "Generating text...");
           }
 
-          // tool input — accumulate to extract file_path
           if (e?.delta?.type === "input_json_delta" && e.delta.partial_json) {
             currentToolInput += e.delta.partial_json;
           }
 
-          // block finished — extract file_path from Write/Edit tools
           if (e?.type === "content_block_stop") {
             if (currentToolName && /^(Write|Edit|write|edit)$/.test(currentToolName) && currentToolInput) {
               try {
@@ -174,7 +274,6 @@ export function startBot(configOverride) {
           }
         }
 
-        // assistant turn complete
         if (ev.type === "assistant") {
           const content = ev.message?.content;
           if (Array.isArray(content)) {
@@ -189,7 +288,6 @@ export function startBot(configOverride) {
           }
         }
 
-        // final result
         if (ev.type === "result") {
           if (ev.result) resultText = ev.result;
         }
@@ -201,20 +299,16 @@ export function startBot(configOverride) {
         return s.length > 80 ? s.slice(0, 80) + "…" : s;
       }
 
-      // ── periodic progress updates as new messages ──
       const progressTimer = setInterval(() => sendProgress(), PROGRESS_INTERVAL);
 
       async function sendProgress() {
         if (settled) return;
-
-        // only send if there are new activities
         if (activities.length === lastActivityCount) return;
 
         const newActivities = activities.slice(lastActivityCount);
         lastActivityCount = activities.length;
 
         const log = newActivities.join("\n");
-
         const preview = resultText.length > 0
           ? `\n\n📝 (${Math.round(resultText.length / 1024)}kb written)`
           : "";
@@ -233,7 +327,6 @@ export function startBot(configOverride) {
         clearInterval(progressTimer);
       }
 
-      // ── parse newline-delimited JSON from stdout ──
       proc.stdout.on("data", (chunk) => {
         resetIdle();
         lineBuf += chunk.toString();
@@ -278,7 +371,7 @@ export function startBot(configOverride) {
     return parts;
   }
 
-  // ── Native Telegram commands ──
+  // ── Telegram commands ──
 
   function isAllowed(m) {
     const userId = m.from?.id;
@@ -349,12 +442,47 @@ export function startBot(configOverride) {
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /sessions`);
   });
 
-  // ── Inline keyboard callback (resume session) ──
+  // ── Inline keyboard callbacks ──
 
   bot.on("callback_query", async (query) => {
     const data = query.data;
     const chatId = query.message?.chat?.id;
-    if (!chatId || !data?.startsWith("resume:")) return;
+    if (!chatId || !data) return;
+
+    // ── Approval response (per-message permission) ──
+    if (data.startsWith("approve:")) {
+      const [, approvalId, answer] = data.split(":");
+      const pending = pendingApprovals.get(approvalId);
+
+      if (pending) {
+        clearTimeout(pending.timer);
+        pendingApprovals.delete(approvalId);
+
+        const approved = answer === "y";
+        const label = approved
+          ? (msg.permAllowed || "Allowed!")
+          : (msg.permDenied || "Denied!");
+        const icon = approved ? "✅" : "❌";
+
+        await bot.answerCallbackQuery(query.id, { text: label });
+
+        try {
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [[{ text: `${icon} ${label}`, callback_data: "noop" }]] },
+            { chat_id: chatId, message_id: query.message.message_id }
+          );
+        } catch {}
+
+        pending.resolve(approved);
+        console.log(`[${new Date().toISOString()}] ${query.from?.username}: approval ${approvalId} → ${answer}`);
+      } else {
+        await bot.answerCallbackQuery(query.id, { text: msg.permExpired || "Expired" });
+      }
+      return;
+    }
+
+    // ── Resume session ──
+    if (!data.startsWith("resume:")) return;
 
     const sessionId = data.slice(7);
     const entry = findSession(config.workingDir, sessionId);
@@ -382,8 +510,6 @@ export function startBot(configOverride) {
     const text = m.text;
 
     if (!text) return;
-
-    // Skip commands — already handled by onText
     if (text.startsWith("/")) return;
 
     if (allowed.length > 0 && !allowed.includes(userId)) {
@@ -391,7 +517,30 @@ export function startBot(configOverride) {
       return;
     }
 
-    console.log(`[${new Date().toISOString()}] ${m.from?.username}: ${text}`);
+    console.log(`[${new Date().toISOString()}] 📩 ${m.from?.username}: "${text}"`);
+
+    // ── Smart approval: classify intent first, only ask for actions ──
+    let skipPerms = config.skipPermissions;
+
+    if (!skipPerms) {
+      console.log(`[${new Date().toISOString()}] 🛡️  approval mode — classifying intent...`);
+      const intent = await classifyIntent(text);
+
+      if (intent === "action") {
+        console.log(`[${new Date().toISOString()}] 🔐 action detected — asking user for approval`);
+        const approved = await requestApproval(chatId, text);
+        if (!approved) {
+          console.log(`[${new Date().toISOString()}] ❌ ${m.from?.username}: denied → skipping`);
+          return;
+        }
+        console.log(`[${new Date().toISOString()}] ✅ ${m.from?.username}: approved → running with --dangerously-skip-permissions`);
+        skipPerms = true;
+      } else {
+        console.log(`[${new Date().toISOString()}] 💬 chat detected — running without skip-permissions`);
+      }
+    } else {
+      console.log(`[${new Date().toISOString()}] ⚡ autonomous mode — skipping classification`);
+    }
 
     bot.sendChatAction(chatId, "typing");
     const typingInterval = setInterval(() => {
@@ -400,7 +549,7 @@ export function startBot(configOverride) {
 
     await withChatLock(chatId, async () => {
       try {
-        const { text: response, files } = await callClaude(text, chatId);
+        const { text: response, files } = await callClaude(text, chatId, skipPerms);
         clearInterval(typingInterval);
 
         if (!response) {
@@ -415,7 +564,6 @@ export function startBot(configOverride) {
           );
         }
 
-        // Send any files created/modified by Claude
         if (files && files.length > 0) {
           for (const filePath of files) {
             try {
@@ -434,12 +582,11 @@ export function startBot(configOverride) {
         clearInterval(typingInterval);
         console.error("Error:", err.message);
 
-        // Session error recovery: if resume failed, clear session and retry
         if (err.message && err.message.includes("session")) {
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
           clearActiveSession(chatId);
           try {
-            const { text: retryResponse } = await callClaude(text, chatId);
+            const { text: retryResponse } = await callClaude(text, chatId, skipPerms);
             if (retryResponse) {
               const parts = splitMessage(retryResponse);
               for (const part of parts) {
