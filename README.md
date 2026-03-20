@@ -1,6 +1,10 @@
-# Claudiogram
+<p align="center">
+  <img src="assets/logo.svg" alt="CLAUDIOGRAM" width="600"/>
+</p>
 
-> Use Claude Code from your phone via Telegram.
+<p align="center">
+  <strong>Use Claude Code from your phone via Telegram.</strong>
+</p>
 
 Claudiogram is a gateway that bridges [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and Telegram, allowing you to send prompts and receive responses directly from a Telegram chat. Run it on your machine and interact with Claude Code from anywhere — your phone, tablet, or any device with Telegram.
 
@@ -84,9 +88,22 @@ cgram start       # Alias for gateway
 cgram stop        # Stop a running gateway
 cgram restart     # Restart the gateway
 cgram status      # Show gateway status
+cgram send        # Send a message or file to Telegram
 cgram onboard     # Run the setup wizard
+cgram update      # Update to latest version from main
 cgram help        # Show help
 ```
+
+### Sending Messages & Files
+
+```bash
+cgram send "hello world"             # Send text
+cgram send -f /path/to/file.png      # Send a file
+cgram send -f /path/to/doc.pdf "lg"  # File with caption
+cgram send                           # Interactive mode
+```
+
+When the gateway is running, files created or modified by Claude (via Write/Edit tools) are automatically sent to your Telegram chat.
 
 ### Quick Start
 

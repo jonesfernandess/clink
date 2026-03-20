@@ -6,6 +6,7 @@ import figlet from "figlet";
 import gradient from "gradient-string";
 import { loadConfig, saveConfig, CONFIG_FILE } from "./config.js";
 import { startBot } from "./bot.js";
+import { createBot, sendText, sendFile } from "./send.js";
 import { homedir } from "os";
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { execSync } from "child_process";
@@ -435,9 +436,16 @@ function showHelp() {
   console.log(`    ${accent("stop")}        Stop a running gateway`);
   console.log(`    ${accent("restart")}     Restart the gateway`);
   console.log(`    ${accent("status")}      Show gateway status`);
+  console.log(`    ${accent("send")}        Send a message or file to Telegram`);
   console.log(`    ${accent("onboard")}     Run the setup wizard`);
   console.log(`    ${accent("update")}      Update to latest version from main`);
   console.log(`    ${accent("help")}        Show this help`);
+  console.log("");
+  console.log("  Send examples:");
+  console.log(`    cgram send "hello"              Send text`);
+  console.log(`    cgram send -f /path/file.png    Send a file`);
+  console.log(`    cgram send -f /path/f.pdf "lg"  File with caption`);
+  console.log(`    cgram send                      Interactive mode`);
   console.log("");
   console.log("  Run without arguments to open the interactive menu.");
   console.log("");
@@ -477,6 +485,139 @@ function updateFromMain() {
   }
 }
 
+// ── Send handler ──
+
+async function resolveTargetChat(config, msg) {
+  if (config.allowedUsers.length === 0) {
+    p.log.error(msg.sendNoUsers);
+    return null;
+  }
+  if (config.allowedUsers.length === 1) {
+    return config.allowedUsers[0];
+  }
+  const chosen = await p.select({
+    message: msg.sendChooseUser,
+    options: config.allowedUsers.map((id) => ({ value: id, label: String(id) })),
+  });
+  if (p.isCancel(chosen)) return null;
+  return chosen;
+}
+
+async function handleSend(config, msg) {
+  if (!config.token) {
+    p.log.error(msg.tokenNotConfigured + " " + accent("cgram onboard") + " " + msg.toConfigure);
+    process.exit(1);
+  }
+
+  const args = process.argv.slice(3);
+  const chatId = await resolveTargetChat(config, msg);
+  if (!chatId) return;
+
+  const bot = createBot(config.token);
+
+  // Parse args: cgram send -f /path "caption" OR cgram send "text"
+  const fileIdx = args.indexOf("-f");
+
+  if (fileIdx !== -1) {
+    // File mode
+    const filePath = args[fileIdx + 1];
+    if (!filePath) {
+      p.log.error(msg.sendFileNotFound("(empty)"));
+      process.exit(1);
+    }
+
+    const resolvedPath = filePath.replace(/^~/, homedir());
+    if (!existsSync(resolvedPath)) {
+      p.log.error(msg.sendFileNotFound(resolvedPath));
+      process.exit(1);
+    }
+
+    // Caption is everything else that's not -f or the file path
+    const captionParts = args.filter((_, i) => i !== fileIdx && i !== fileIdx + 1);
+    const caption = captionParts.join(" ").trim() || undefined;
+
+    const s = p.spinner();
+    s.start(msg.sendSending);
+    try {
+      await sendFile(bot, chatId, resolvedPath, caption);
+      s.stop(chalk.green(msg.sendSuccess));
+    } catch (err) {
+      s.stop(chalk.red(err.message));
+      process.exit(1);
+    }
+  } else if (args.length > 0) {
+    // Text mode (direct)
+    const text = args.join(" ").trim();
+    if (!text) return;
+
+    const s = p.spinner();
+    s.start(msg.sendSending);
+    try {
+      await sendText(bot, chatId, text);
+      s.stop(chalk.green(msg.sendSuccess));
+    } catch (err) {
+      s.stop(chalk.red(err.message));
+      process.exit(1);
+    }
+  } else {
+    // Interactive mode
+    const action = await p.select({
+      message: msg.sendChooseAction,
+      options: [
+        { value: "text", label: msg.sendTextOption },
+        { value: "file", label: msg.sendFileOption },
+      ],
+    });
+
+    if (p.isCancel(action)) return;
+
+    if (action === "text") {
+      const text = await p.text({
+        message: msg.sendText,
+        placeholder: "...",
+        validate: (v) => { if (!v.trim()) return msg.sendText; },
+      });
+      if (p.isCancel(text)) return;
+
+      const s = p.spinner();
+      s.start(msg.sendSending);
+      try {
+        await sendText(bot, chatId, text.trim());
+        s.stop(chalk.green(msg.sendSuccess));
+      } catch (err) {
+        s.stop(chalk.red(err.message));
+      }
+    } else {
+      const filePath = await p.text({
+        message: msg.sendFilePath,
+        placeholder: msg.sendFilePathPlaceholder,
+        validate: (v) => {
+          if (!v.trim()) return msg.sendFilePath;
+          const resolved = v.trim().replace(/^~/, homedir());
+          if (!existsSync(resolved)) return msg.sendFileNotFound(resolved);
+        },
+      });
+      if (p.isCancel(filePath)) return;
+
+      const caption = await p.text({
+        message: msg.sendCaption,
+        placeholder: msg.sendCaptionPlaceholder,
+      });
+      const captionText = p.isCancel(caption) ? undefined : (caption.trim() || undefined);
+
+      const resolvedPath = filePath.trim().replace(/^~/, homedir());
+      const s = p.spinner();
+      s.start(msg.sendSending);
+      try {
+        await sendFile(bot, chatId, resolvedPath, captionText);
+        s.stop(chalk.green(msg.sendSuccess));
+      } catch (err) {
+        s.stop(chalk.red(err.message));
+      }
+    }
+  }
+}
+
 // ── Entry ──
 
 async function main() {
@@ -503,6 +644,10 @@ async function main() {
         return;
       }
       mainMenu();
+      return;
+
+    case "send":
+      await handleSend(config, msg);
       return;
 
     case "update":

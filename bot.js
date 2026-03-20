@@ -1,8 +1,10 @@
 import TelegramBot from "node-telegram-bot-api";
 import { spawn } from "child_process";
 import { randomUUID } from "crypto";
+import { existsSync } from "fs";
 import { loadConfig } from "./config.js";
 import { t } from "./i18n.js";
+import { sendFile } from "./send.js";
 import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
 
 export function startBot(configOverride) {
@@ -84,6 +86,9 @@ export function startBot(configOverride) {
       let resultText = "";
       let activities = [];        // log of what claude is doing
       let currentTool = null;
+      let currentToolName = null;
+      let currentToolInput = "";
+      let createdFiles = [];      // file paths from Write/Edit tool_use
       let settled = false;
       let lineBuf = "";
       let stderr = "";
@@ -139,6 +144,8 @@ export function startBot(configOverride) {
           if (e?.type === "content_block_start" && e.content_block?.type === "tool_use") {
             const name = e.content_block.name || "tool";
             currentTool = name;
+            currentToolName = name;
+            currentToolInput = "";
             addActivity("🔧", name);
           }
 
@@ -148,14 +155,22 @@ export function startBot(configOverride) {
             addActivity("✍️", "Generating text...");
           }
 
-          // tool input (shows what's being done)
+          // tool input — accumulate to extract file_path
           if (e?.delta?.type === "input_json_delta" && e.delta.partial_json) {
-            // we could parse tool args but just note activity
+            currentToolInput += e.delta.partial_json;
           }
 
-          // block finished
+          // block finished — extract file_path from Write/Edit tools
           if (e?.type === "content_block_stop") {
+            if (currentToolName && /^(Write|Edit|write|edit)$/.test(currentToolName) && currentToolInput) {
+              try {
+                const input = JSON.parse(currentToolInput);
+                if (input.file_path) createdFiles.push(input.file_path);
+              } catch {}
+            }
             currentTool = null;
+            currentToolName = null;
+            currentToolInput = "";
           }
         }
 
@@ -236,7 +251,7 @@ export function startBot(configOverride) {
         if (settled) return;
         if (lineBuf.trim()) handleEvent(lineBuf);
         cleanup();
-        if (code === 0) resolve(resultText.trim());
+        if (code === 0) resolve({ text: resultText.trim(), files: createdFiles });
         else reject(new Error(`claude exit ${code}: ${stderr}`));
       });
 
@@ -385,7 +400,7 @@ export function startBot(configOverride) {
 
     await withChatLock(chatId, async () => {
       try {
-        const response = await callClaude(text, chatId);
+        const { text: response, files } = await callClaude(text, chatId);
         clearInterval(typingInterval);
 
         if (!response) {
@@ -400,6 +415,20 @@ export function startBot(configOverride) {
           );
         }
 
+        // Send any files created/modified by Claude
+        if (files && files.length > 0) {
+          for (const filePath of files) {
+            try {
+              if (existsSync(filePath)) {
+                await sendFile(bot, chatId, filePath);
+                console.log(`[${new Date().toISOString()}] -> sent file: ${filePath}`);
+              }
+            } catch (fileErr) {
+              console.error(`Failed to send file ${filePath}:`, fileErr.message);
+            }
+          }
+        }
+
         console.log(`[${new Date().toISOString()}] -> replied (${response.length} chars)`);
       } catch (err) {
         clearInterval(typingInterval);
@@ -410,7 +439,7 @@ export function startBot(configOverride) {
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
           clearActiveSession(chatId);
           try {
-            const retryResponse = await callClaude(text, chatId);
+            const { text: retryResponse } = await callClaude(text, chatId);
             if (retryResponse) {
               const parts = splitMessage(retryResponse);
               for (const part of parts) {

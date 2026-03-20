@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF5A2D"/>
+      <stop offset="50%" stop-color="#FF8C42"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </linearGradient>
+  </defs>
+  <rect width="720" height="180" rx="16" fill="#0d1117"/>
+  <text x="360" y="105" text-anchor="middle" font-family="monospace, 'Courier New'" font-size="64" font-weight="bold" fill="url(#g)" letter-spacing="6">CLAUDIOGRAM</text>
+  <text x="360" y="140" text-anchor="middle" font-family="monospace, 'Courier New'" font-size="16" fill="#8b949e">Claude Code via Telegram</text>
+</svg>

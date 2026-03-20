@@ -144,6 +144,22 @@ const messages = {
     sessionResumedLong: "Resumed session:",
     sessionNotFound: "Session not found",
 
+    // Send command
+    sendPrompt: "What do you want to send?",
+    sendChooseAction: "Choose an action",
+    sendTextOption: "Send text",
+    sendFileOption: "Send file",
+    sendText: "Type your message",
+    sendFilePath: "File path",
+    sendFilePathPlaceholder: "/path/to/file",
+    sendCaption: "Caption (optional)",
+    sendCaptionPlaceholder: "Leave empty for no caption",
+    sendSuccess: "Sent!",
+    sendNoUsers: "No allowed users configured. Add one with 'cgram onboard' or the menu.",
+    sendChooseUser: "Send to which user?",
+    sendFileNotFound: (f) => `File not found: ${f}`,
+    sendSending: "Sending...",
+
     // Errors
     tokenNotConfigured: "Token not configured. Run",
     toConfigure: "to configure.",
@@ -294,6 +310,22 @@ const messages = {
     sessionResumedLong: "Sessao retomada:",
     sessionNotFound: "Sessao nao encontrada",
 
+    // Send command
+    sendPrompt: "O que voce quer enviar?",
+    sendChooseAction: "Escolha uma acao",
+    sendTextOption: "Enviar texto",
+    sendFileOption: "Enviar arquivo",
+    sendText: "Digite sua mensagem",
+    sendFilePath: "Caminho do arquivo",
+    sendFilePathPlaceholder: "/caminho/do/arquivo",
+    sendCaption: "Legenda (opcional)",
+    sendCaptionPlaceholder: "Deixe vazio para sem legenda",
+    sendSuccess: "Enviado!",
+    sendNoUsers: "Nenhum usuario permitido configurado. Adicione um com 'cgram onboard' ou no menu.",
+    sendChooseUser: "Enviar para qual usuario?",
+    sendFileNotFound: (f) => `Arquivo nao encontrado: ${f}`,
+    sendSending: "Enviando...",
+
     tokenNotConfigured: "Token nao configurado. Execute",
     toConfigure: "para configurar.",
 
@@ -441,6 +473,22 @@ const messages = {
     sessionResumed: "Sesion retomada!",
     sessionResumedLong: "Sesion retomada:",
     sessionNotFound: "Sesion no encontrada",
+
+    // Send command
+    sendPrompt: "Que quieres enviar?",
+    sendChooseAction: "Elige una accion",
+    sendTextOption: "Enviar texto",
+    sendFileOption: "Enviar archivo",
+    sendText: "Escribe tu mensaje",
+    sendFilePath: "Ruta del archivo",
+    sendFilePathPlaceholder: "/ruta/del/archivo",
+    sendCaption: "Leyenda (opcional)",
+    sendCaptionPlaceholder: "Dejar vacio para sin leyenda",
+    sendSuccess: "Enviado!",
+    sendNoUsers: "Ningun usuario permitido configurado. Agrega uno con 'cgram onboard' o en el menu.",
+    sendChooseUser: "Enviar a cual usuario?",
+    sendFileNotFound: (f) => `Archivo no encontrado: ${f}`,
+    sendSending: "Enviando...",
 
     tokenNotConfigured: "Token no configurado. Ejecuta",
     toConfigure: "para configurar.",
