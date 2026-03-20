@@ -30,4 +30,4 @@ export function saveConfig(config) {
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
-export { CONFIG_FILE };
+export { CONFIG_DIR, CONFIG_FILE };
