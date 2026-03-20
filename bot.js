@@ -20,13 +20,13 @@ export function startBot(configOverride) {
   const allowed = config.allowedUsers.map(Number);
   const startTime = Date.now();
   const chatLocks = new Map();
-  const pendingApprovals = new Map(); // approvalId -> { chatId, text, resolve }
-  const unlockedChats = new Set();   // chats that approved permissions (until /lock or /new)
+  const pendingApprovals = new Map(); // approvalId -> { chatId, resolve, timer }
 
-  const IDLE_TIMEOUT = 180_000;
-  const PROGRESS_INTERVAL = 10_000;
-  const APPROVAL_TIMEOUT = 120_000;
+  const IDLE_TIMEOUT = 180_000;       // kill after 3 min without ANY stdout data
+  const PROGRESS_INTERVAL = 10_000;   // send/edit progress every 10s
+  const APPROVAL_TIMEOUT = 120_000;   // auto-deny after 2 min with no response
 
+  // Register commands so they appear in Telegram UI
   bot.setMyCommands([
     { command: "new", description: msg.cmdNewDesc },
     { command: "sessions", description: msg.cmdSessionsDesc || "List sessions" },
@@ -177,6 +177,7 @@ Classification:`;
       if (config.model) args.push("--model", config.model);
       if (config.systemPrompt) args.push("--append-system-prompt", config.systemPrompt);
 
+      // Session management: resume active session or assign explicit ID for new ones
       let activeSessionId = getActiveSession(chatId);
       if (activeSessionId) {
         args.push("--resume", activeSessionId);
@@ -195,16 +196,17 @@ Classification:`;
       });
 
       let resultText = "";
-      let activities = [];
+      let activities = [];        // log of what claude is doing
       let currentTool = null;
       let currentToolName = null;
       let currentToolInput = "";
-      let createdFiles = [];
+      let createdFiles = [];      // file paths from Write/Edit tool_use
       let settled = false;
       let lineBuf = "";
       let stderr = "";
       let lastActivityCount = 0;
 
+      // ── rolling idle timeout ──
       let idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
 
       function resetIdle() {
@@ -223,6 +225,7 @@ Classification:`;
       function addActivity(icon, text) {
         const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
         activities.push(`${icon} [${ts}] ${text}`);
+        // keep last 15 activities
         if (activities.length > 15) activities = activities.slice(-15);
       }
 
@@ -232,6 +235,7 @@ Classification:`;
         let ev;
         try { ev = JSON.parse(line); } catch { return; }
 
+        // system events (init, api retries, etc)
         if (ev.type === "system") {
           addActivity("⚙️", ev.message || ev.subtype || "system event");
         }
@@ -239,11 +243,13 @@ Classification:`;
         if (ev.type === "stream_event") {
           const e = ev.event;
 
+          // text being generated
           if (e?.delta?.type === "text_delta" && e.delta.text) {
             resultText += e.delta.text;
             if (!currentTool) currentTool = "writing";
           }
 
+          // tool use started
           if (e?.type === "content_block_start" && e.content_block?.type === "tool_use") {
             const name = e.content_block.name || "tool";
             currentTool = name;
@@ -252,15 +258,18 @@ Classification:`;
             addActivity("🔧", name);
           }
 
+          // text block started
           if (e?.type === "content_block_start" && e.content_block?.type === "text") {
             currentTool = "writing";
             addActivity("✍️", "Generating text...");
           }
 
+          // tool input — accumulate to extract file_path
           if (e?.delta?.type === "input_json_delta" && e.delta.partial_json) {
             currentToolInput += e.delta.partial_json;
           }
 
+          // block finished — extract file_path from Write/Edit tools
           if (e?.type === "content_block_stop") {
             if (currentToolName && /^(Write|Edit|write|edit)$/.test(currentToolName) && currentToolInput) {
               try {
@@ -274,6 +283,7 @@ Classification:`;
           }
         }
 
+        // assistant turn complete
         if (ev.type === "assistant") {
           const content = ev.message?.content;
           if (Array.isArray(content)) {
@@ -288,6 +298,7 @@ Classification:`;
           }
         }
 
+        // final result
         if (ev.type === "result") {
           if (ev.result) resultText = ev.result;
         }
@@ -299,10 +310,13 @@ Classification:`;
         return s.length > 80 ? s.slice(0, 80) + "…" : s;
       }
 
+      // ── periodic progress updates as new messages ──
       const progressTimer = setInterval(() => sendProgress(), PROGRESS_INTERVAL);
 
       async function sendProgress() {
         if (settled) return;
+
+        // only send if there are new activities
         if (activities.length === lastActivityCount) return;
 
         const newActivities = activities.slice(lastActivityCount);
@@ -327,6 +341,7 @@ Classification:`;
         clearInterval(progressTimer);
       }
 
+      // ── parse newline-delimited JSON from stdout ──
       proc.stdout.on("data", (chunk) => {
         resetIdle();
         lineBuf += chunk.toString();
@@ -510,6 +525,8 @@ Classification:`;
     const text = m.text;
 
     if (!text) return;
+
+    // Skip commands — already handled by onText
     if (text.startsWith("/")) return;
 
     if (allowed.length > 0 && !allowed.includes(userId)) {
@@ -564,6 +581,7 @@ Classification:`;
           );
         }
 
+        // Send any files created/modified by Claude
         if (files && files.length > 0) {
           for (const filePath of files) {
             try {
@@ -582,6 +600,7 @@ Classification:`;
         clearInterval(typingInterval);
         console.error("Error:", err.message);
 
+        // Session error recovery: if resume failed, clear session and retry
         if (err.message && err.message.includes("session")) {
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
           clearActiveSession(chatId);
