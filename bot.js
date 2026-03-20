@@ -21,6 +21,7 @@ export function startBot(configOverride) {
   const startTime = Date.now();
   const chatLocks = new Map();
   const pendingApprovals = new Map(); // approvalId -> { chatId, resolve, timer }
+  const chatFiles = new Map();       // chatId -> [filePath, ...] — files created in session
 
   const IDLE_TIMEOUT = 180_000;       // kill after 3 min without ANY stdout data
   const PROGRESS_INTERVAL = 10_000;   // send/edit progress every 10s
@@ -59,10 +60,11 @@ export function startBot(configOverride) {
 
   function classifyIntent(userText) {
     return new Promise((resolve) => {
-      const classifyPrompt = `Classify this message. Reply with a single word: CHAT or ACTION.
+      const classifyPrompt = `Classify this message. Reply with a single word: CHAT, ACTION, or SEND_FILE.
 
 CHAT = greetings, questions, conversation, explanations (no tools needed)
 ACTION = create/edit/delete files, run commands, install packages, git, system changes
+SEND_FILE = user is asking to receive/send/download a file via chat (e.g. "me manda o arquivo", "send me the file", "envia o PDF")
 
 Message: """${userText}"""
 
@@ -94,10 +96,19 @@ Classification:`;
         settled = true;
         const raw = output.trim();
         const result = raw.toUpperCase();
-        const isChat = result.includes("CHAT") && !result.includes("ACTION");
 
-        console.log(`${ts()} 🔍 classifier: exit=${code} raw="${raw}" stderr="${stderrOut.trim().slice(0, 200)}" → ${isChat ? "CHAT ✓" : "ACTION 🔐"}`);
-        resolve(isChat ? "chat" : "action");
+        let intent;
+        if (result.includes("SEND_FILE") || result.includes("SEND FILE")) {
+          intent = "send_file";
+        } else if (result.includes("CHAT") && !result.includes("ACTION")) {
+          intent = "chat";
+        } else {
+          intent = "action";
+        }
+
+        const icons = { chat: "CHAT ✓", action: "ACTION 🔐", send_file: "SEND_FILE 📎" };
+        console.log(`${ts()} 🔍 classifier: exit=${code} raw="${raw}" stderr="${stderrOut.trim().slice(0, 200)}" → ${icons[intent]}`);
+        resolve(intent);
       });
 
       proc.on("error", (err) => {
@@ -165,7 +176,7 @@ Classification:`;
 
   // ── Call Claude Code CLI ──
 
-  function callClaude(prompt, chatId, skipPerms) {
+  function callClaude(prompt, chatId, skipPerms, extraSystemPrompt) {
     return new Promise((resolve, reject) => {
       const args = [
         "-p",
@@ -175,7 +186,12 @@ Classification:`;
       ];
       if (skipPerms) args.push("--dangerously-skip-permissions");
       if (config.model) args.push("--model", config.model);
-      if (config.systemPrompt) args.push("--append-system-prompt", config.systemPrompt);
+
+      // Combine user system prompt + extra (e.g. file sending instructions)
+      const sysPromptParts = [config.systemPrompt, extraSystemPrompt].filter(Boolean);
+      if (sysPromptParts.length > 0) {
+        args.push("--append-system-prompt", sysPromptParts.join("\n\n"));
+      }
 
       // Session management: resume active session or assign explicit ID for new ones
       let activeSessionId = getActiveSession(chatId);
@@ -406,6 +422,7 @@ Classification:`;
   bot.onText(/\/new$/, async (m) => {
     if (!isAllowed(m)) return;
     clearActiveSession(m.chat.id);
+    chatFiles.delete(m.chat.id);
     await bot.sendMessage(m.chat.id, msg.sessionCleared);
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /new (session cleared)`);
   });
@@ -536,8 +553,9 @@ Classification:`;
 
     console.log(`[${new Date().toISOString()}] 📩 ${m.from?.username}: "${text}"`);
 
-    // ── Smart approval: classify intent first, only ask for actions ──
+    // ── Smart approval: classify intent, only ask for actions ──
     let skipPerms = config.skipPermissions;
+    let wantsFiles = false;
 
     if (!skipPerms) {
       console.log(`[${new Date().toISOString()}] 🛡️  approval mode — classifying intent...`);
@@ -552,6 +570,10 @@ Classification:`;
         }
         console.log(`[${new Date().toISOString()}] ✅ ${m.from?.username}: approved → running with --dangerously-skip-permissions`);
         skipPerms = true;
+      } else if (intent === "send_file") {
+        console.log(`[${new Date().toISOString()}] 📎 send_file detected — will deliver files after response`);
+        wantsFiles = true;
+        skipPerms = true; // needs tools to read/find files
       } else {
         console.log(`[${new Date().toISOString()}] 💬 chat detected — running without skip-permissions`);
       }
@@ -564,9 +586,25 @@ Classification:`;
       bot.sendChatAction(chatId, "typing").catch(() => {});
     }, 4000);
 
+    // Build extra system prompt for file sending when intent is send_file
+    let extraSysPrompt = null;
+    if (wantsFiles) {
+      const tracked = chatFiles.get(chatId) || [];
+      const fileList = tracked.length > 0
+        ? tracked.map((f) => `  - ${f}`).join("\n")
+        : "  (no files tracked yet)";
+      extraSysPrompt = `The user is chatting via Telegram and wants to receive files.
+You can send files by including [SEND_FILE:/absolute/path] tags in your response.
+Each tag sends that file to the user's Telegram chat. You can include multiple tags.
+Only use absolute paths. You can also use Read/Glob to find files if needed.
+
+Files created in this session:
+${fileList}`;
+    }
+
     await withChatLock(chatId, async () => {
       try {
-        const { text: response, files } = await callClaude(text, chatId, skipPerms);
+        const { text: response, files } = await callClaude(text, chatId, skipPerms, extraSysPrompt);
         clearInterval(typingInterval);
 
         if (!response) {
@@ -574,24 +612,37 @@ Classification:`;
           return;
         }
 
-        const parts = splitMessage(response);
-        for (const part of parts) {
-          await bot.sendMessage(chatId, part, { parse_mode: "Markdown" }).catch(
-            () => bot.sendMessage(chatId, part)
-          );
+        // Track files created/modified by Claude in this session
+        if (files && files.length > 0) {
+          const existing = chatFiles.get(chatId) || [];
+          chatFiles.set(chatId, [...existing, ...files]);
         }
 
-        // Send any files created/modified by Claude
-        if (files && files.length > 0) {
-          for (const filePath of files) {
-            try {
-              if (existsSync(filePath)) {
-                await sendFile(bot, chatId, filePath);
-                console.log(`[${new Date().toISOString()}] -> sent file: ${filePath}`);
-              }
-            } catch (fileErr) {
-              console.error(`Failed to send file ${filePath}:`, fileErr.message);
+        // Parse [SEND_FILE:/path] tags from Claude's response
+        const sendFileTags = [...response.matchAll(/\[SEND_FILE:([^\]]+)\]/g)].map((m) => m[1].trim());
+
+        // Send the response text (strip the tags so user doesn't see them)
+        const cleanResponse = response.replace(/\[SEND_FILE:[^\]]+\]/g, "").trim();
+        if (cleanResponse) {
+          const parts = splitMessage(cleanResponse);
+          for (const part of parts) {
+            await bot.sendMessage(chatId, part, { parse_mode: "Markdown" }).catch(
+              () => bot.sendMessage(chatId, part)
+            );
+          }
+        }
+
+        // Deliver files that Claude requested to send
+        for (const filePath of sendFileTags) {
+          try {
+            if (existsSync(filePath)) {
+              await sendFile(bot, chatId, filePath);
+              console.log(`[${new Date().toISOString()}] -> sent file: ${filePath}`);
+            } else {
+              console.log(`[${new Date().toISOString()}] -> file not found: ${filePath}`);
             }
+          } catch (fileErr) {
+            console.error(`Failed to send file ${filePath}:`, fileErr.message);
           }
         }
 
