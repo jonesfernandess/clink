@@ -436,10 +436,45 @@ function showHelp() {
   console.log(`    ${accent("restart")}     Restart the gateway`);
   console.log(`    ${accent("status")}      Show gateway status`);
   console.log(`    ${accent("onboard")}     Run the setup wizard`);
+  console.log(`    ${accent("update")}      Update to latest version from main`);
   console.log(`    ${accent("help")}        Show this help`);
   console.log("");
   console.log("  Run without arguments to open the interactive menu.");
   console.log("");
+}
+
+// ── Auto-update ──
+
+function getRepoDir() {
+  return new URL(".", import.meta.url).pathname.replace(/\/$/, "");
+}
+
+function updateFromMain() {
+  const repoDir = getRepoDir();
+  console.log("");
+  console.log(`  ${accent("●")} Updating claudiogram from ${chalk.blue("main")}...`);
+  console.log(dim(`  ${repoDir}`));
+  console.log("");
+
+  try {
+    execSync("git fetch origin main", { cwd: repoDir, stdio: "inherit" });
+    const status = execSync("git status --porcelain", { cwd: repoDir, encoding: "utf-8" }).trim();
+    if (status) {
+      console.log(chalk.yellow("\n  ⚠ You have local changes. Stashing before update...\n"));
+      execSync("git stash", { cwd: repoDir, stdio: "inherit" });
+    }
+    execSync("git pull origin main", { cwd: repoDir, stdio: "inherit" });
+    console.log("");
+    console.log(`  ${accent("●")} Installing dependencies...`);
+    console.log("");
+    execSync("npm install", { cwd: repoDir, stdio: "inherit" });
+    console.log("");
+    console.log(chalk.green("  ✓ claudiogram updated successfully!"));
+    console.log("");
+  } catch (err) {
+    console.error(chalk.red(`\n  ✗ Update failed: ${err.message}\n`));
+    process.exit(1);
+  }
 }
 
 // ── Entry ──
@@ -468,6 +503,11 @@ async function main() {
         return;
       }
       mainMenu();
+      return;
+
+    case "update":
+    case "upgrade":
+      updateFromMain();
       return;
 
     case "gateway":
