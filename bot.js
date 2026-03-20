@@ -111,20 +111,20 @@ export function startBot(configOverride) {
     return true;
   }
 
-  bot.onText(/\/start(?:@\S+)?$/, async (m) => {
+  bot.onText(/\/start$/, async (m) => {
     if (!isAllowed(m)) return;
     await bot.sendMessage(m.chat.id, msg.botWelcome);
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /start`);
   });
 
-  bot.onText(/\/new(?:@\S+)?(?:\s|$)/, async (m) => {
+  bot.onText(/\/new$/, async (m) => {
     if (!isAllowed(m)) return;
     clearSession(m.chat.id);
     await bot.sendMessage(m.chat.id, msg.sessionCleared);
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /new (session cleared)`);
   });
 
-  bot.onText(/\/status(?:@\S+)?(?:\s|$)/, async (m) => {
+  bot.onText(/\/status$/, async (m) => {
     if (!isAllowed(m)) return;
     const chatId = m.chat.id;
     const session = getSession(chatId);
