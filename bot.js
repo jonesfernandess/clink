@@ -245,6 +245,7 @@ Classification:`;
         if (activities.length > 15) activities = activities.slice(-15);
       }
 
+      // ── parse stream-json events ──
       function handleEvent(line) {
         if (!line.trim()) return;
 
