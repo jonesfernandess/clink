@@ -2,7 +2,7 @@ import TelegramBot from "node-telegram-bot-api";
 import { spawn } from "child_process";
 import { loadConfig } from "./config.js";
 import { t } from "./i18n.js";
-import { getSession, createSession, clearSession, touchSession, getSessionCount } from "./session.js";
+import { getSession, createSession, clearSession, resumeSession, touchSession, listSessions, getSessionCount } from "./session.js";
 
 export function startBot(configOverride) {
   const config = configOverride || loadConfig();
@@ -21,6 +21,7 @@ export function startBot(configOverride) {
   // Register commands so they appear in Telegram UI
   bot.setMyCommands([
     { command: "new", description: msg.cmdNewDesc },
+    { command: "sessions", description: msg.cmdSessionsDesc || "List sessions" },
     { command: "status", description: msg.cmdStatusDesc },
     { command: "start", description: msg.botWelcome },
   ]).catch(() => {});
@@ -58,7 +59,7 @@ export function startBot(configOverride) {
       if (session) {
         args.push("--resume", session.sessionId);
       } else {
-        session = createSession(chatId);
+        session = createSession(chatId, prompt);
         args.push("--session-id", session.sessionId);
       }
 
@@ -143,6 +144,56 @@ export function startBot(configOverride) {
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /status`);
   });
 
+  bot.onText(/\/sessions$/, async (m) => {
+    if (!isAllowed(m)) return;
+    const chatId = m.chat.id;
+    const { active, sessions } = listSessions(chatId);
+
+    if (sessions.length === 0) {
+      await bot.sendMessage(chatId, msg.noSessions || "No sessions yet. Send a message to start one.");
+      return;
+    }
+
+    const buttons = sessions.slice(0, 10).map((s) => {
+      const date = new Date(s.lastUsedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const count = s.messageCount || 0;
+      const preview = s.summary || "...";
+      const isActive = s.sessionId === active;
+      const label = `${isActive ? "● " : ""}${preview} (${count} msgs, ${date})`;
+      return [{ text: label, callback_data: `resume:${s.sessionId}` }];
+    });
+
+    await bot.sendMessage(chatId, msg.sessionsTitle || "*Sessions*\nTap to resume:", {
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: buttons },
+    });
+    console.log(`[${new Date().toISOString()}] ${m.from?.username}: /sessions`);
+  });
+
+  // ── Inline keyboard callback (resume session) ──
+
+  bot.on("callback_query", async (query) => {
+    const data = query.data;
+    const chatId = query.message?.chat?.id;
+    if (!chatId || !data?.startsWith("resume:")) return;
+
+    const sessionId = data.slice(7);
+    const entry = resumeSession(chatId, sessionId);
+
+    if (entry) {
+      const preview = entry.summary || entry.sessionId.slice(0, 8);
+      await bot.answerCallbackQuery(query.id, { text: msg.sessionResumed || "Session resumed!" });
+      await bot.sendMessage(chatId,
+        `${msg.sessionResumedLong || "Resumed session:"} *${preview}*\n${msg.messagesInSession}: ${entry.messageCount}`,
+        { parse_mode: "Markdown" }
+      ).catch(() => bot.sendMessage(chatId, `Resumed: ${preview}`));
+    } else {
+      await bot.answerCallbackQuery(query.id, { text: msg.sessionNotFound || "Session not found" });
+    }
+
+    console.log(`[${new Date().toISOString()}] ${query.from?.username}: resume ${sessionId.slice(0, 8)}`);
+  });
+
   // ── Regular messages ──
 
   bot.on("message", async (m) => {
@@ -177,7 +228,7 @@ export function startBot(configOverride) {
           return;
         }
 
-        touchSession(chatId);
+        touchSession(chatId, text);
 
         const parts = splitMessage(response);
         for (const part of parts) {
@@ -198,7 +249,7 @@ export function startBot(configOverride) {
           try {
             const retryResponse = await callClaude(text, chatId);
             if (retryResponse) {
-              touchSession(chatId);
+              touchSession(chatId, text);
               const parts = splitMessage(retryResponse);
               for (const part of parts) {
                 await bot.sendMessage(chatId, part, { parse_mode: "Markdown" }).catch(

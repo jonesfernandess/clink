@@ -137,6 +137,12 @@ const messages = {
     uptime: "Uptime",
     sessionNone: "No active session — send a message to start one.",
     sessionRetry: "Session error — starting fresh conversation.",
+    cmdSessionsDesc: "List previous sessions",
+    sessionsTitle: "*Sessions*\nTap to resume:",
+    noSessions: "No sessions yet. Send a message to start one.",
+    sessionResumed: "Session resumed!",
+    sessionResumedLong: "Resumed session:",
+    sessionNotFound: "Session not found",
 
     // Errors
     tokenNotConfigured: "Token not configured. Run",
@@ -281,6 +287,12 @@ const messages = {
     uptime: "Tempo ativo",
     sessionNone: "Nenhuma sessao ativa — envie uma mensagem para iniciar.",
     sessionRetry: "Erro na sessao — iniciando conversa nova.",
+    cmdSessionsDesc: "Listar sessoes anteriores",
+    sessionsTitle: "*Sessoes*\nToque para retomar:",
+    noSessions: "Nenhuma sessao ainda. Envie uma mensagem para iniciar.",
+    sessionResumed: "Sessao retomada!",
+    sessionResumedLong: "Sessao retomada:",
+    sessionNotFound: "Sessao nao encontrada",
 
     tokenNotConfigured: "Token nao configurado. Execute",
     toConfigure: "para configurar.",
@@ -423,6 +435,12 @@ const messages = {
     uptime: "Tiempo activo",
     sessionNone: "Ninguna sesion activa — envia un mensaje para iniciar.",
     sessionRetry: "Error de sesion — iniciando conversacion nueva.",
+    cmdSessionsDesc: "Listar sesiones anteriores",
+    sessionsTitle: "*Sesiones*\nToca para retomar:",
+    noSessions: "Ninguna sesion aun. Envia un mensaje para iniciar.",
+    sessionResumed: "Sesion retomada!",
+    sessionResumedLong: "Sesion retomada:",
+    sessionNotFound: "Sesion no encontrada",
 
     tokenNotConfigured: "Token no configurado. Ejecuta",
     toConfigure: "para configurar.",
