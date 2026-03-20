@@ -1,128 +1,124 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { join } from "path";
-import { randomUUID } from "crypto";
+import { homedir } from "os";
 import { CONFIG_DIR } from "./config.js";
 
-const SESSIONS_FILE = join(CONFIG_DIR, "sessions.json");
+const ACTIVE_SESSIONS_FILE = join(CONFIG_DIR, "active-sessions.json");
 
-// Schema:
-// {
-//   "<chatId>": {
-//     "active": "uuid" | null,
-//     "history": [
-//       {
-//         "sessionId": "uuid",
-//         "summary": "first message snippet",
-//         "createdAt": "ISO",
-//         "lastUsedAt": "ISO",
-//         "messageCount": 0
-//       }
-//     ]
-//   }
-// }
+// ── Path encoding (matches Claude CLI convention) ──
 
-function loadSessions() {
-  if (!existsSync(SESSIONS_FILE)) return {};
+function encodeProjectPath(dir) {
+  return dir.replace(/\//g, "-");
+}
+
+function projectDir(workingDir) {
+  return join(homedir(), ".claude", "projects", encodeProjectPath(workingDir));
+}
+
+// ── Parse a .jsonl session file for metadata ──
+
+function parseSessionFile(filePath) {
   try {
-    return JSON.parse(readFileSync(SESSIONS_FILE, "utf-8"));
+    const content = readFileSync(filePath, "utf-8").trim();
+    if (!content) return null;
+    const lines = content.split("\n");
+
+    let sessionId = null;
+    let firstPrompt = null;
+    let firstTimestamp = null;
+    let messageCount = 0;
+
+    for (const line of lines) {
+      const obj = JSON.parse(line);
+      if (!sessionId && obj.sessionId) sessionId = obj.sessionId;
+      if (obj.type === "user") {
+        messageCount++;
+        if (!firstPrompt) {
+          const msg = obj.message?.content || obj.message;
+          firstPrompt = typeof msg === "string" ? msg.slice(0, 120) : "";
+          firstTimestamp = obj.timestamp;
+        }
+      }
+    }
+
+    if (!sessionId) return null;
+
+    const stat = statSync(filePath);
+    return {
+      sessionId,
+      firstPrompt: firstPrompt || "",
+      summary: firstPrompt || "",
+      messageCount,
+      created: firstTimestamp || stat.birthtime.toISOString(),
+      modified: stat.mtime.toISOString(),
+      fullPath: filePath,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ── Active session pointers (chatId → sessionId) ──
+
+function loadActiveMap() {
+  if (!existsSync(ACTIVE_SESSIONS_FILE)) return {};
+  try {
+    return JSON.parse(readFileSync(ACTIVE_SESSIONS_FILE, "utf-8"));
   } catch {
     return {};
   }
 }
 
-function saveSessions(map) {
-  writeFileSync(SESSIONS_FILE, JSON.stringify(map, null, 2));
+function saveActiveMap(map) {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  writeFileSync(ACTIVE_SESSIONS_FILE, JSON.stringify(map, null, 2));
 }
 
-function ensureChat(sessions, chatId) {
-  const key = String(chatId);
-  if (!sessions[key]) {
-    sessions[key] = { active: null, history: [] };
-  }
-  // Migrate old format (flat session object)
-  if (sessions[key].sessionId && !sessions[key].history) {
-    const old = sessions[key];
-    sessions[key] = {
-      active: old.sessionId,
-      history: [{ ...old }],
-    };
-  }
-  return sessions[key];
+// ── Public API ──
+
+export function getActiveSession(chatId) {
+  const map = loadActiveMap();
+  return map[String(chatId)] || null;
 }
 
-function findInHistory(chat, sessionId) {
-  return chat.history.find((s) => s.sessionId === sessionId) || null;
+export function setActiveSession(chatId, sessionId) {
+  const map = loadActiveMap();
+  map[String(chatId)] = sessionId;
+  saveActiveMap(map);
 }
 
-export function getSession(chatId) {
-  const sessions = loadSessions();
-  const chat = ensureChat(sessions, chatId);
-  if (!chat.active) return null;
-  return findInHistory(chat, chat.active);
+export function clearActiveSession(chatId) {
+  const map = loadActiveMap();
+  delete map[String(chatId)];
+  saveActiveMap(map);
 }
 
-export function createSession(chatId, summary) {
-  const sessions = loadSessions();
-  const chat = ensureChat(sessions, chatId);
-  const entry = {
-    sessionId: randomUUID(),
-    summary: summary ? summary.slice(0, 100) : "",
-    createdAt: new Date().toISOString(),
-    lastUsedAt: new Date().toISOString(),
-    messageCount: 0,
-  };
-  chat.history.push(entry);
-  chat.active = entry.sessionId;
-  // Keep last 20 sessions
-  if (chat.history.length > 20) {
-    chat.history = chat.history.slice(-20);
-  }
-  saveSessions(sessions);
-  return entry;
-}
+export function listClaudeSessions(workingDir, limit = 15) {
+  const dir = projectDir(workingDir);
+  if (!existsSync(dir)) return [];
+  try {
+    const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+    // Sort by mtime desc first (cheap), then only parse the top N
+    const withMtime = files.map((f) => {
+      const full = join(dir, f);
+      return { file: full, mtime: statSync(full).mtimeMs };
+    });
+    withMtime.sort((a, b) => b.mtime - a.mtime);
 
-export function clearSession(chatId) {
-  const sessions = loadSessions();
-  const chat = ensureChat(sessions, chatId);
-  chat.active = null;
-  saveSessions(sessions);
-}
-
-export function resumeSession(chatId, sessionId) {
-  const sessions = loadSessions();
-  const chat = ensureChat(sessions, chatId);
-  const entry = findInHistory(chat, sessionId);
-  if (!entry) return null;
-  chat.active = sessionId;
-  saveSessions(sessions);
-  return entry;
-}
-
-export function touchSession(chatId, summary) {
-  const sessions = loadSessions();
-  const chat = ensureChat(sessions, chatId);
-  if (!chat.active) return;
-  const entry = findInHistory(chat, chat.active);
-  if (entry) {
-    entry.lastUsedAt = new Date().toISOString();
-    entry.messageCount = (entry.messageCount || 0) + 1;
-    if (summary && !entry.summary) {
-      entry.summary = summary.slice(0, 100);
+    const sessions = [];
+    for (const { file } of withMtime) {
+      const entry = parseSessionFile(file);
+      if (entry && entry.messageCount > 0) sessions.push(entry);
+      if (sessions.length >= limit) break;
     }
-    saveSessions(sessions);
+    return sessions;
+  } catch {
+    return [];
   }
 }
 
-export function listSessions(chatId) {
-  const sessions = loadSessions();
-  const chat = ensureChat(sessions, chatId);
-  return {
-    active: chat.active,
-    sessions: [...chat.history].reverse(),
-  };
-}
-
-export function getSessionCount() {
-  const sessions = loadSessions();
-  return Object.values(sessions).filter((c) => c.active).length;
+export function findSession(workingDir, sessionId) {
+  const filePath = join(projectDir(workingDir), `${sessionId}.jsonl`);
+  if (!existsSync(filePath)) return null;
+  return parseSessionFile(filePath);
 }

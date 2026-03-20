@@ -1,8 +1,9 @@
 import TelegramBot from "node-telegram-bot-api";
 import { spawn } from "child_process";
+import { randomUUID } from "crypto";
 import { loadConfig } from "./config.js";
 import { t } from "./i18n.js";
-import { getSession, createSession, clearSession, resumeSession, touchSession, listSessions, getSessionCount } from "./session.js";
+import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
 
 export function startBot(configOverride) {
   const config = configOverride || loadConfig();
@@ -54,13 +55,14 @@ export function startBot(configOverride) {
       if (config.model) args.push("--model", config.model);
       if (config.systemPrompt) args.push("--append-system-prompt", config.systemPrompt);
 
-      // Session management
-      let session = getSession(chatId);
-      if (session) {
-        args.push("--resume", session.sessionId);
+      // Session management: resume active session or assign explicit ID for new ones
+      let activeSessionId = getActiveSession(chatId);
+      if (activeSessionId) {
+        args.push("--resume", activeSessionId);
       } else {
-        session = createSession(chatId, prompt);
-        args.push("--session-id", session.sessionId);
+        activeSessionId = randomUUID();
+        args.push("--session-id", activeSessionId);
+        setActiveSession(chatId, activeSessionId);
       }
 
       args.push(prompt);
@@ -120,7 +122,7 @@ export function startBot(configOverride) {
 
   bot.onText(/\/new$/, async (m) => {
     if (!isAllowed(m)) return;
-    clearSession(m.chat.id);
+    clearActiveSession(m.chat.id);
     await bot.sendMessage(m.chat.id, msg.sessionCleared);
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /new (session cleared)`);
   });
@@ -128,7 +130,8 @@ export function startBot(configOverride) {
   bot.onText(/\/status$/, async (m) => {
     if (!isAllowed(m)) return;
     const chatId = m.chat.id;
-    const session = getSession(chatId);
+    const activeId = getActiveSession(chatId);
+    const session = activeId ? findSession(config.workingDir, activeId) : null;
     const uptimeStr = formatUptime(Date.now() - startTime);
     let statusText = "";
     statusText += `*${msg.uptime}:* ${uptimeStr}\n`;
@@ -147,7 +150,8 @@ export function startBot(configOverride) {
   bot.onText(/\/sessions$/, async (m) => {
     if (!isAllowed(m)) return;
     const chatId = m.chat.id;
-    const { active, sessions } = listSessions(chatId);
+    const sessions = listClaudeSessions(config.workingDir);
+    const activeId = getActiveSession(chatId);
 
     if (sessions.length === 0) {
       await bot.sendMessage(chatId, msg.noSessions || "No sessions yet. Send a message to start one.");
@@ -155,10 +159,10 @@ export function startBot(configOverride) {
     }
 
     const buttons = sessions.slice(0, 10).map((s) => {
-      const date = new Date(s.lastUsedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const date = new Date(s.modified).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       const count = s.messageCount || 0;
-      const preview = s.summary || "...";
-      const isActive = s.sessionId === active;
+      const preview = (s.summary || s.firstPrompt || "...").slice(0, 40);
+      const isActive = s.sessionId === activeId;
       const label = `${isActive ? "● " : ""}${preview} (${count} msgs, ${date})`;
       return [{ text: label, callback_data: `resume:${s.sessionId}` }];
     });
@@ -178,10 +182,11 @@ export function startBot(configOverride) {
     if (!chatId || !data?.startsWith("resume:")) return;
 
     const sessionId = data.slice(7);
-    const entry = resumeSession(chatId, sessionId);
+    const entry = findSession(config.workingDir, sessionId);
 
     if (entry) {
-      const preview = entry.summary || entry.sessionId.slice(0, 8);
+      setActiveSession(chatId, sessionId);
+      const preview = (entry.summary || entry.firstPrompt || sessionId.slice(0, 8)).slice(0, 40);
       await bot.answerCallbackQuery(query.id, { text: msg.sessionResumed || "Session resumed!" });
       await bot.sendMessage(chatId,
         `${msg.sessionResumedLong || "Resumed session:"} *${preview}*\n${msg.messagesInSession}: ${entry.messageCount}`,
@@ -228,8 +233,6 @@ export function startBot(configOverride) {
           return;
         }
 
-        touchSession(chatId, text);
-
         const parts = splitMessage(response);
         for (const part of parts) {
           await bot.sendMessage(chatId, part, { parse_mode: "Markdown" }).catch(
@@ -245,11 +248,10 @@ export function startBot(configOverride) {
         // Session error recovery: if resume failed, clear session and retry
         if (err.message && err.message.includes("session")) {
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
-          clearSession(chatId);
+          clearActiveSession(chatId);
           try {
             const retryResponse = await callClaude(text, chatId);
             if (retryResponse) {
-              touchSession(chatId, text);
               const parts = splitMessage(retryResponse);
               for (const part of parts) {
                 await bot.sendMessage(chatId, part, { parse_mode: "Markdown" }).catch(
