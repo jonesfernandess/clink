@@ -12,6 +12,7 @@ import { execSync } from "child_process";
 import { join } from "path";
 import { t, LANGUAGE_NAMES } from "./i18n.js";
 import { runWizard } from "./wizard.js";
+import { getSessionCount } from "./session.js";
 
 const accent = chalk.hex("#FF5A2D");
 const dim = chalk.dim;
@@ -227,6 +228,7 @@ async function handleStatus(config, msg) {
     p.log.info(`${msg.gatewayDirectory}: ${chalk.blue(config.workingDir)}`);
     p.log.info(`${msg.gatewayPermissions}: ${config.skipPermissions ? msg.autonomous : msg.askApproval}`);
     p.log.info(`${msg.gatewayAllowed}: ${config.allowedUsers.length > 0 ? config.allowedUsers.join(", ") : msg.allUsers}`);
+    p.log.info(`Sessions: ${accent(getSessionCount())}`);
   } else {
     p.log.info(`Gateway ${chalk.red(msg.stopped)}`);
   }
@@ -517,6 +519,7 @@ async function main() {
         console.log(`  ${dim(msg.gatewayDirectory)}:    ${chalk.blue(config.workingDir)}`);
         console.log(`  ${dim(msg.gatewayPermissions)}:  ${config.skipPermissions ? msg.autonomous : msg.askApproval}`);
         console.log(`  ${dim(msg.gatewayAllowed)}:      ${config.allowedUsers.length > 0 ? config.allowedUsers.join(", ") : msg.allUsers}`);
+        console.log(`  ${dim("Sessions")}:      ${accent(getSessionCount())}`);
       } else {
         console.log(`  ${chalk.red("○")} Gateway ${chalk.red(msg.stopped)}`);
       }

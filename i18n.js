@@ -127,6 +127,17 @@ const messages = {
     wizardReady: "You're all set!",
     wizardStartNow: "Start gateway now?",
 
+    // Sessions & Commands
+    sessionCleared: "Session cleared! Next message starts a fresh conversation.",
+    cmdNewDesc: "Start a new conversation",
+    cmdStatusDesc: "Show gateway status",
+    botWelcome: "Welcome! Send any message to start chatting with Claude.",
+    sessionInfo: (id, count) => `Session: \`${id.slice(0, 8)}...\` — ${count} message(s)`,
+    messagesInSession: "messages in session",
+    uptime: "Uptime",
+    sessionNone: "No active session — send a message to start one.",
+    sessionRetry: "Session error — starting fresh conversation.",
+
     // Errors
     tokenNotConfigured: "Token not configured. Run",
     toConfigure: "to configure.",
@@ -260,6 +271,17 @@ const messages = {
     wizardReady: "Tudo pronto!",
     wizardStartNow: "Iniciar gateway agora?",
 
+    // Sessions & Commands
+    sessionCleared: "Sessao limpa! A proxima mensagem inicia uma conversa nova.",
+    cmdNewDesc: "Iniciar nova conversa",
+    cmdStatusDesc: "Mostrar status do gateway",
+    botWelcome: "Bem-vindo! Envie qualquer mensagem para comecar a conversar com o Claude.",
+    sessionInfo: (id, count) => `Sessao: \`${id.slice(0, 8)}...\` — ${count} mensagem(ns)`,
+    messagesInSession: "mensagens na sessao",
+    uptime: "Tempo ativo",
+    sessionNone: "Nenhuma sessao ativa — envie uma mensagem para iniciar.",
+    sessionRetry: "Erro na sessao — iniciando conversa nova.",
+
     tokenNotConfigured: "Token nao configurado. Execute",
     toConfigure: "para configurar.",
 
@@ -390,6 +412,17 @@ const messages = {
     wizardDone: "Configuracion completa! Ejecuta 'cgram gateway' o selecciona Iniciar gateway en el menu.",
     wizardReady: "Todo listo!",
     wizardStartNow: "Iniciar gateway ahora?",
+
+    // Sessions & Commands
+    sessionCleared: "Sesion borrada! El proximo mensaje inicia una conversacion nueva.",
+    cmdNewDesc: "Iniciar nueva conversacion",
+    cmdStatusDesc: "Mostrar estado del gateway",
+    botWelcome: "Bienvenido! Envia cualquier mensaje para comenzar a chatear con Claude.",
+    sessionInfo: (id, count) => `Sesion: \`${id.slice(0, 8)}...\` — ${count} mensaje(s)`,
+    messagesInSession: "mensajes en la sesion",
+    uptime: "Tiempo activo",
+    sessionNone: "Ninguna sesion activa — envia un mensaje para iniciar.",
+    sessionRetry: "Error de sesion — iniciando conversacion nueva.",
 
     tokenNotConfigured: "Token no configurado. Ejecuta",
     toConfigure: "para configurar.",
