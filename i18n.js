@@ -83,16 +83,16 @@ const messages = {
 
     // Permissions
     permCurrentAuto: "Current mode: autonomous — Claude executes everything without asking",
-    permCurrentSafe: "Current mode: safe — Claude asks for approval on the terminal",
+    permCurrentSafe: "Current mode: safe — Claude asks for approval via Telegram",
     permPrompt: "Permissions mode",
-    permAutoLabel: "Autonomous (recommended)",
-    permAutoHint: "executes everything directly, no blocking for approval",
-    permSafeLabel: "Ask approval",
-    permSafeHint: "blocks on terminal asking permission — useless on mobile",
+    permAutoLabel: "Autonomous",
+    permAutoHint: "executes everything directly, no approval needed",
+    permSafeLabel: "Ask approval (via Telegram)",
+    permSafeHint: "sends Allow/Deny buttons on Telegram before executing tools",
     permAutoEnabled: "Autonomous mode enabled",
-    permSafeEnabled: "Approval mode enabled",
+    permSafeEnabled: "Approval mode enabled — permissions will be sent via Telegram",
     permAutoNote: "Security guaranteed by user allowlist",
-    permSafeNote: "Warning: gateway will block waiting for terminal input",
+    permSafeNote: "You will receive Allow/Deny buttons on Telegram for each tool use",
 
     // Prompt
     promptMessage: "Additional system prompt",
@@ -143,6 +143,16 @@ const messages = {
     sessionResumed: "Session resumed!",
     sessionResumedLong: "Resumed session:",
     sessionNotFound: "Session not found",
+
+    // Telegram permissions
+    permTitle: "Permission",
+    permAllow: "Allow",
+    permDeny: "Deny",
+    permAllowed: "Allowed!",
+    permDenied: "Denied!",
+    permExpired: "Expired",
+    permTimedOut: "Auto-denied (timeout — 2 min)",
+    permApprovalHint: "Allow Claude to use all tools for this request?",
 
     // Send command
     sendPrompt: "What do you want to send?",
@@ -252,16 +262,16 @@ const messages = {
     listEmpty: "lista vazia",
 
     permCurrentAuto: "Modo atual: autonomo — Claude executa tudo sem pedir aprovacao",
-    permCurrentSafe: "Modo atual: seguro — Claude pede aprovacao no terminal",
+    permCurrentSafe: "Modo atual: seguro — Claude pede aprovacao via Telegram",
     permPrompt: "Modo de permissoes",
-    permAutoLabel: "Autonomo (recomendado)",
-    permAutoHint: "executa tudo direto, sem travar esperando aprovacao",
-    permSafeLabel: "Pedir aprovacao",
-    permSafeHint: "trava no terminal pedindo permissao — inutil no celular",
+    permAutoLabel: "Autonomo",
+    permAutoHint: "executa tudo direto, sem pedir aprovacao",
+    permSafeLabel: "Pedir aprovacao (via Telegram)",
+    permSafeHint: "envia botoes Permitir/Negar no Telegram antes de executar tools",
     permAutoEnabled: "Modo autonomo ativado",
-    permSafeEnabled: "Modo aprovacao ativado",
+    permSafeEnabled: "Modo aprovacao ativado — permissoes serao enviadas via Telegram",
     permAutoNote: "Seguranca garantida pela allowlist de usuarios",
-    permSafeNote: "Atencao: o gateway vai travar esperando input no terminal",
+    permSafeNote: "Voce recebera botoes Permitir/Negar no Telegram para cada tool",
 
     promptMessage: "System prompt adicional",
     promptPlaceholder: "Instrucoes extras para o Claude (opcional)",
@@ -309,6 +319,16 @@ const messages = {
     sessionResumed: "Sessao retomada!",
     sessionResumedLong: "Sessao retomada:",
     sessionNotFound: "Sessao nao encontrada",
+
+    // Telegram permissions
+    permTitle: "Permissao",
+    permAllow: "Permitir",
+    permDeny: "Negar",
+    permAllowed: "Permitido!",
+    permDenied: "Negado!",
+    permExpired: "Expirado",
+    permTimedOut: "Negado automaticamente (timeout — 2 min)",
+    permApprovalHint: "Permitir que o Claude use todas as ferramentas para este pedido?",
 
     // Send command
     sendPrompt: "O que voce quer enviar?",
@@ -416,16 +436,16 @@ const messages = {
     listEmpty: "lista vacia",
 
     permCurrentAuto: "Modo actual: autonomo — Claude ejecuta todo sin pedir aprobacion",
-    permCurrentSafe: "Modo actual: seguro — Claude pide aprobacion en la terminal",
+    permCurrentSafe: "Modo actual: seguro — Claude pide aprobacion via Telegram",
     permPrompt: "Modo de permisos",
-    permAutoLabel: "Autonomo (recomendado)",
-    permAutoHint: "ejecuta todo directo, sin bloquear esperando aprobacion",
-    permSafeLabel: "Pedir aprobacion",
-    permSafeHint: "bloquea en la terminal pidiendo permiso — inutil en el celular",
+    permAutoLabel: "Autonomo",
+    permAutoHint: "ejecuta todo directo, sin pedir aprobacion",
+    permSafeLabel: "Pedir aprobacion (via Telegram)",
+    permSafeHint: "envia botones Permitir/Negar en Telegram antes de ejecutar tools",
     permAutoEnabled: "Modo autonomo activado",
-    permSafeEnabled: "Modo aprobacion activado",
+    permSafeEnabled: "Modo aprobacion activado — permisos seran enviados via Telegram",
     permAutoNote: "Seguridad garantizada por la allowlist de usuarios",
-    permSafeNote: "Atencion: el gateway se bloqueara esperando input en la terminal",
+    permSafeNote: "Recibiras botones Permitir/Negar en Telegram para cada tool",
 
     promptMessage: "System prompt adicional",
     promptPlaceholder: "Instrucciones extras para Claude (opcional)",
@@ -473,6 +493,16 @@ const messages = {
     sessionResumed: "Sesion retomada!",
     sessionResumedLong: "Sesion retomada:",
     sessionNotFound: "Sesion no encontrada",
+
+    // Telegram permissions
+    permTitle: "Permiso",
+    permAllow: "Permitir",
+    permDeny: "Negar",
+    permAllowed: "Permitido!",
+    permDenied: "Negado!",
+    permExpired: "Expirado",
+    permTimedOut: "Denegado automaticamente (timeout — 2 min)",
+    permApprovalHint: "Permitir que Claude use todas las herramientas para esta solicitud?",
 
     // Send command
     sendPrompt: "Que quieres enviar?",
