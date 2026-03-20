@@ -1,0 +1,31 @@
+{
+  "name": "claudiogram",
+  "version": "1.0.0",
+  "description": "Bridge between Claude Code and Telegram — use Claude Code from your phone",
+  "main": "cli.js",
+  "scripts": {
+    "gateway": "node cli.js gateway",
+    "start": "node cli.js gateway"
+  },
+  "keywords": [
+    "claude",
+    "telegram",
+    "cli",
+    "mobile",
+    "ai"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bin": {
+    "cgram": "./cli.js",
+    "claudiogram": "./cli.js"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.0",
+    "chalk": "^5.6.2",
+    "figlet": "^1.11.0",
+    "gradient-string": "^3.0.0",
+    "node-telegram-bot-api": "^0.67.0"
+  }
+}
