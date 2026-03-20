@@ -100,6 +100,51 @@ export function startBot(configOverride) {
     return parts;
   }
 
+  // ── Native Telegram commands ──
+
+  function isAllowed(m) {
+    const userId = m.from?.id;
+    if (allowed.length > 0 && !allowed.includes(userId)) {
+      console.log(msg.gatewayBlocked(userId, m.from?.username));
+      return false;
+    }
+    return true;
+  }
+
+  bot.onText(/\/start(?:@\S+)?$/, async (m) => {
+    if (!isAllowed(m)) return;
+    await bot.sendMessage(m.chat.id, msg.botWelcome);
+    console.log(`[${new Date().toISOString()}] ${m.from?.username}: /start`);
+  });
+
+  bot.onText(/\/new(?:@\S+)?(?:\s|$)/, async (m) => {
+    if (!isAllowed(m)) return;
+    clearSession(m.chat.id);
+    await bot.sendMessage(m.chat.id, msg.sessionCleared);
+    console.log(`[${new Date().toISOString()}] ${m.from?.username}: /new (session cleared)`);
+  });
+
+  bot.onText(/\/status(?:@\S+)?(?:\s|$)/, async (m) => {
+    if (!isAllowed(m)) return;
+    const chatId = m.chat.id;
+    const session = getSession(chatId);
+    const uptimeStr = formatUptime(Date.now() - startTime);
+    let statusText = "";
+    statusText += `*${msg.uptime}:* ${uptimeStr}\n`;
+    statusText += `*${msg.gatewayModel}:* ${config.model || "sonnet"}\n`;
+    if (session) {
+      statusText += msg.sessionInfo(session.sessionId, session.messageCount || 0);
+    } else {
+      statusText += msg.sessionNone;
+    }
+    await bot.sendMessage(chatId, statusText, { parse_mode: "Markdown" }).catch(
+      () => bot.sendMessage(chatId, statusText)
+    );
+    console.log(`[${new Date().toISOString()}] ${m.from?.username}: /status`);
+  });
+
+  // ── Regular messages ──
+
   bot.on("message", async (m) => {
     const chatId = m.chat.id;
     const userId = m.from?.id;
@@ -107,40 +152,11 @@ export function startBot(configOverride) {
 
     if (!text) return;
 
+    // Skip commands — already handled by onText
+    if (text.startsWith("/")) return;
+
     if (allowed.length > 0 && !allowed.includes(userId)) {
       console.log(msg.gatewayBlocked(userId, m.from?.username));
-      return;
-    }
-
-    // Handle commands
-    if (text === "/new" || text === "/new@" + (await bot.getMe().then(me => me.username).catch(() => "")) || text.startsWith("/new ")) {
-      clearSession(chatId);
-      await bot.sendMessage(chatId, msg.sessionCleared);
-      console.log(`[${new Date().toISOString()}] ${m.from?.username}: /new (session cleared)`);
-      return;
-    }
-
-    if (text === "/status" || text.startsWith("/status ") || text.startsWith("/status@")) {
-      const session = getSession(chatId);
-      const uptimeStr = formatUptime(Date.now() - startTime);
-      let statusText = "";
-      statusText += `*${msg.uptime}:* ${uptimeStr}\n`;
-      statusText += `*${msg.gatewayModel}:* ${config.model || "sonnet"}\n`;
-      if (session) {
-        statusText += msg.sessionInfo(session.sessionId, session.messageCount || 0);
-      } else {
-        statusText += msg.sessionNone;
-      }
-      await bot.sendMessage(chatId, statusText, { parse_mode: "Markdown" }).catch(
-        () => bot.sendMessage(chatId, statusText)
-      );
-      console.log(`[${new Date().toISOString()}] ${m.from?.username}: /status`);
-      return;
-    }
-
-    if (text === "/start" || text.startsWith("/start@")) {
-      await bot.sendMessage(chatId, msg.botWelcome);
-      console.log(`[${new Date().toISOString()}] ${m.from?.username}: /start`);
       return;
     }
 
