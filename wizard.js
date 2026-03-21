@@ -51,29 +51,29 @@ export async function runWizard() {
   console.log("");
 
   // Security disclaimer
-  p.log.warn(chalk.bold("Security — please read."));
+  p.log.warn(chalk.bold(msg.disclaimerTitle));
   console.log("");
-  console.log("  This bot can read files, run commands, and modify your system");
-  console.log("  on behalf of anyone in the allowed users list.");
-  console.log("  A bad prompt can trick it into doing unsafe things.");
+  console.log(`  ${msg.disclaimerLine1}`);
+  console.log(`  ${msg.disclaimerLine2}`);
+  console.log(`  ${msg.disclaimerLine3}`);
   console.log("");
-  console.log(dim("  This software is provided \"as is\", without warranty of any kind."));
-  console.log(dim("  The authors are not liable for any damages or data loss."));
-  console.log(dim("  You are responsible for configuring access controls properly."));
+  console.log(dim(`  ${msg.disclaimerAsIs}`));
+  console.log(dim(`  ${msg.disclaimerLiability}`));
+  console.log(dim(`  ${msg.disclaimerResponsibility}`));
   console.log("");
-  console.log(dim("  Recommended:"));
-  console.log(dim("  - Always configure an allowlist of trusted Telegram user IDs"));
-  console.log(dim("  - Use approval mode (skipPermissions: false) when possible"));
-  console.log(dim("  - Do not expose the bot to untrusted users"));
+  console.log(dim(`  ${msg.disclaimerRec}`));
+  console.log(dim(`  ${msg.disclaimerRec1}`));
+  console.log(dim(`  ${msg.disclaimerRec2}`));
+  console.log(dim(`  ${msg.disclaimerRec3}`));
   console.log("");
 
   const accepted = await p.confirm({
-    message: "I understand this is powerful and inherently risky. Continue?",
+    message: msg.disclaimerConfirm,
     initialValue: false,
   });
 
   if (p.isCancel(accepted) || !accepted) {
-    p.outro(dim("Setup cancelled."));
+    p.outro(dim(msg.disclaimerCancelled));
     process.exit(0);
   }
 

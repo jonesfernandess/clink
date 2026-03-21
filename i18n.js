@@ -104,6 +104,21 @@ const messages = {
     languagePrompt: "Interface language",
     languageChanged: (l) => `Language changed to ${l}`,
 
+    // Security disclaimer
+    disclaimerTitle: "Security — please read.",
+    disclaimerLine1: "This bot can read files, run commands, and modify your system",
+    disclaimerLine2: "on behalf of anyone in the allowed users list.",
+    disclaimerLine3: "A bad prompt can trick it into doing unsafe things.",
+    disclaimerAsIs: 'This software is provided "as is", without warranty of any kind.',
+    disclaimerLiability: "The authors are not liable for any damages or data loss.",
+    disclaimerResponsibility: "You are responsible for configuring access controls properly.",
+    disclaimerRec: "Recommended:",
+    disclaimerRec1: "- Always configure an allowlist of trusted Telegram user IDs",
+    disclaimerRec2: "- Use approval mode (skipPermissions: false) when possible",
+    disclaimerRec3: "- Do not expose the bot to untrusted users",
+    disclaimerConfirm: "I understand this is powerful and inherently risky. Continue?",
+    disclaimerCancelled: "Setup cancelled.",
+
     // Wizard
     wizardWelcome: "Welcome! Let's set up CLINK.",
     wizardChecking: "Checking prerequisites...",
@@ -289,6 +304,21 @@ const messages = {
     languagePrompt: "Idioma da interface",
     languageChanged: (l) => `Idioma alterado para ${l}`,
 
+    // Security disclaimer
+    disclaimerTitle: "Seguranca — por favor, leia.",
+    disclaimerLine1: "Este bot pode ler arquivos, executar comandos e modificar seu sistema",
+    disclaimerLine2: "em nome de qualquer pessoa na lista de usuarios permitidos.",
+    disclaimerLine3: "Um prompt malicioso pode engana-lo a fazer coisas inseguras.",
+    disclaimerAsIs: 'Este software e fornecido "como esta", sem garantia de qualquer tipo.',
+    disclaimerLiability: "Os autores nao sao responsaveis por quaisquer danos ou perda de dados.",
+    disclaimerResponsibility: "Voce e responsavel por configurar os controles de acesso corretamente.",
+    disclaimerRec: "Recomendado:",
+    disclaimerRec1: "- Sempre configure uma lista de IDs de usuarios do Telegram confiaveis",
+    disclaimerRec2: "- Use o modo de aprovacao (skipPermissions: false) quando possivel",
+    disclaimerRec3: "- Nao exponha o bot a usuarios nao confiaveis",
+    disclaimerConfirm: "Eu entendo que isso e poderoso e inerentemente arriscado. Continuar?",
+    disclaimerCancelled: "Configuracao cancelada.",
+
     wizardWelcome: "Bem-vindo! Vamos configurar o CLINK.",
     wizardChecking: "Verificando pre-requisitos...",
     wizardClaudeFound: "Claude CLI encontrado",
@@ -470,6 +500,21 @@ const messages = {
 
     languagePrompt: "Idioma de la interfaz",
     languageChanged: (l) => `Idioma cambiado a ${l}`,
+
+    // Security disclaimer
+    disclaimerTitle: "Seguridad — por favor, lea.",
+    disclaimerLine1: "Este bot puede leer archivos, ejecutar comandos y modificar su sistema",
+    disclaimerLine2: "en nombre de cualquier persona en la lista de usuarios permitidos.",
+    disclaimerLine3: "Un prompt malicioso puede enganarlo para hacer cosas inseguras.",
+    disclaimerAsIs: 'Este software se proporciona "tal cual", sin garantia de ningun tipo.',
+    disclaimerLiability: "Los autores no son responsables de ningun dano o perdida de datos.",
+    disclaimerResponsibility: "Usted es responsable de configurar los controles de acceso correctamente.",
+    disclaimerRec: "Recomendado:",
+    disclaimerRec1: "- Siempre configure una lista de IDs de usuarios de Telegram confiables",
+    disclaimerRec2: "- Use el modo de aprobacion (skipPermissions: false) cuando sea posible",
+    disclaimerRec3: "- No exponga el bot a usuarios no confiables",
+    disclaimerConfirm: "Entiendo que esto es poderoso e inherentemente riesgoso. Continuar?",
+    disclaimerCancelled: "Configuracion cancelada.",
 
     wizardWelcome: "Bienvenido! Vamos a configurar CLINK.",
     wizardChecking: "Verificando prerequisitos...",
