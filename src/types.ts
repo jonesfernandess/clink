@@ -111,6 +111,10 @@ export interface Messages {
   codexLatestHint: string;
   codexMiniHint: string;
   codexCodingHint: string;
+  codexFrontierHint: string;
+  codexProHint: string;
+  codexMaxHint: string;
+  codexLiteHint: string;
 
   // Workdir
   workdirPrompt: string;

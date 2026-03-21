@@ -280,6 +280,10 @@ async function handleModel(config: ClinkConfig, msg: Messages): Promise<void> {
     { value: "gpt-5.4", label: "GPT-5.4", hint: hasCodex ? `${msg.codexSection} — ${msg.codexLatestHint}` : msg.codexNotFound },
     { value: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: hasCodex ? `${msg.codexSection} — ${msg.codexMiniHint}` : msg.codexNotFound },
     { value: "gpt-5.3-codex", label: "GPT-5.3 Codex", hint: hasCodex ? `${msg.codexSection} — ${msg.codexCodingHint}` : msg.codexNotFound },
+    { value: "gpt-5.2-codex", label: "GPT-5.2 Codex", hint: hasCodex ? `${msg.codexSection} — ${msg.codexFrontierHint}` : msg.codexNotFound },
+    { value: "gpt-5.2", label: "GPT-5.2", hint: hasCodex ? `${msg.codexSection} — ${msg.codexProHint}` : msg.codexNotFound },
+    { value: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max", hint: hasCodex ? `${msg.codexSection} — ${msg.codexMaxHint}` : msg.codexNotFound },
+    { value: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini", hint: hasCodex ? `${msg.codexSection} — ${msg.codexLiteHint}` : msg.codexNotFound },
   ];
 
   const model = await p.select({
