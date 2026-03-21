@@ -239,9 +239,10 @@ User request: """${userText}"""`;
         const commandMatch = result.match(/COMMAND:\s*([\s\S]*?)$/i);
 
         if (summaryMatch && commandMatch) {
+          const cmd = commandMatch[1].trim();
           resolve({
-            summary: summaryMatch[1].trim(),
-            command: commandMatch[1].trim(),
+            summary: `${summaryMatch[1].trim()}\n\n⚡ ${cmd}`,
+            command: cmd,
           });
         } else if (result.includes("/")) {
           resolve({ summary: result, command: "" });
