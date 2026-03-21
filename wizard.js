@@ -50,6 +50,35 @@ export async function runWizard() {
   p.log.step(accent(msg.wizardWelcome));
   console.log("");
 
+  // Security disclaimer
+  p.log.warn(chalk.bold("Security — please read."));
+  console.log("");
+  console.log("  This bot can read files, run commands, and modify your system");
+  console.log("  on behalf of anyone in the allowed users list.");
+  console.log("  A bad prompt can trick it into doing unsafe things.");
+  console.log("");
+  console.log(dim("  This software is provided \"as is\", without warranty of any kind."));
+  console.log(dim("  The authors are not liable for any damages or data loss."));
+  console.log(dim("  You are responsible for configuring access controls properly."));
+  console.log("");
+  console.log(dim("  Recommended:"));
+  console.log(dim("  - Always configure an allowlist of trusted Telegram user IDs"));
+  console.log(dim("  - Use approval mode (skipPermissions: false) when possible"));
+  console.log(dim("  - Do not expose the bot to untrusted users"));
+  console.log("");
+
+  const accepted = await p.confirm({
+    message: "I understand this is powerful and inherently risky. Continue?",
+    initialValue: false,
+  });
+
+  if (p.isCancel(accepted) || !accepted) {
+    p.outro(dim("Setup cancelled."));
+    process.exit(0);
+  }
+
+  console.log("");
+
   // Step 1: Check Claude CLI
   p.log.info(dim(msg.wizardChecking));
 
