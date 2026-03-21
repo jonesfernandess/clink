@@ -9,19 +9,20 @@ import { t } from "./i18n.js";
 import { sendFile, sendText } from "./send.js";
 import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
 import { fileURLToPath } from "url";
+import type { ClinkConfig, ClaudeResult, IntentClassification, PendingApproval, Messages } from "./types.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 // ── Audio transcription via faster-whisper ──
 
-async function downloadTelegramFile(bot, fileId) {
+async function downloadTelegramFile(bot: TelegramBot, fileId: string): Promise<string> {
   const tmpDir = join(tmpdir(), "clink-audio");
   mkdirSync(tmpDir, { recursive: true });
   const filePath = await bot.downloadFile(fileId, tmpDir);
   return filePath;
 }
 
-function transcribeAudio(audioPath, whisperModel = "base") {
+function transcribeAudio(audioPath: string, whisperModel: string = "base"): string | null {
   const scriptPath = join(__dirname, "transcribe.py");
   try {
     const result = execSync(`python3 "${scriptPath}" "${audioPath}" "${whisperModel}"`, {
@@ -30,12 +31,12 @@ function transcribeAudio(audioPath, whisperModel = "base") {
     });
     return result.trim();
   } catch (err) {
-    console.error(`Transcription failed: ${err.message}`);
+    console.error(`Transcription failed: ${(err as Error).message}`);
     return null;
   }
 }
 
-function convertToWav(inputPath) {
+function convertToWav(inputPath: string): string | null {
   const wavPath = inputPath.replace(/\.[^.]+$/, ".wav");
   try {
     execSync(`ffmpeg -y -i "${inputPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${wavPath}" 2>/dev/null`, {
@@ -43,20 +44,20 @@ function convertToWav(inputPath) {
     });
     return wavPath;
   } catch (err) {
-    console.error(`FFmpeg conversion failed: ${err.message}`);
+    console.error(`FFmpeg conversion failed: ${(err as Error).message}`);
     return null;
   }
 }
 
-function cleanupFiles(...paths) {
+function cleanupFiles(...paths: (string | null)[]): void {
   for (const p of paths) {
     try { if (p && existsSync(p)) unlinkSync(p); } catch {}
   }
 }
 
-export function startBot(configOverride) {
-  const config = configOverride || loadConfig();
-  const msg = t(config.language);
+export function startBot(configOverride?: ClinkConfig): TelegramBot {
+  const config: ClinkConfig = configOverride || loadConfig();
+  const msg: Messages = t(config.language);
 
   if (!config.token) {
     console.error(msg.tokenNotConfigured);
@@ -64,11 +65,11 @@ export function startBot(configOverride) {
   }
 
   const bot = new TelegramBot(config.token, { polling: true });
-  const allowed = config.allowedUsers.map(Number);
-  const startTime = Date.now();
-  const chatLocks = new Map();
-  const pendingApprovals = new Map(); // approvalId -> { chatId, resolve, timer }
-  const chatFiles = new Map();       // chatId -> [filePath, ...] — files created in session
+  const allowed: number[] = config.allowedUsers.map(Number);
+  const startTime: number = Date.now();
+  const chatLocks: Map<string, Promise<void>> = new Map();
+  const pendingApprovals: Map<string, PendingApproval> = new Map();
+  const chatFiles: Map<number, string[]> = new Map();
 
   const IDLE_TIMEOUT = 180_000;       // kill after 3 min without ANY stdout data
   const PROGRESS_INTERVAL = 10_000;   // send/edit progress every 10s
@@ -82,7 +83,7 @@ export function startBot(configOverride) {
     { command: "start", description: msg.botWelcome },
   ]).catch(() => {});
 
-  function formatUptime(ms) {
+  function formatUptime(ms: number): string {
     const secs = Math.floor(ms / 1000);
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -92,7 +93,7 @@ export function startBot(configOverride) {
     return `${s}s`;
   }
 
-  function withChatLock(chatId, fn) {
+  function withChatLock(chatId: number, fn: () => Promise<void>): Promise<void> {
     const key = String(chatId);
     const prev = chatLocks.get(key) || Promise.resolve();
     const next = prev.then(fn, fn);
@@ -105,7 +106,7 @@ export function startBot(configOverride) {
 
   // ── Intent classifier — quick haiku call to decide if approval is needed ──
 
-  function classifyIntent(userText) {
+  function classifyIntent(userText: string): Promise<IntentClassification> {
     return new Promise((resolve) => {
       const classifyPrompt = `Classify this message. Reply with a single word: CHAT, ACTION, or SEND_FILE.
 
@@ -134,20 +135,20 @@ Classification:`;
       let stderrOut = "";
       let settled = false;
 
-      const ts = () => `[${new Date().toISOString()}]`;
+      const ts = (): string => `[${new Date().toISOString()}]`;
 
       console.log(`${ts()} 🔍 classifier: starting haiku for "${userText.slice(0, 60)}"`);
 
-      proc.stdout.on("data", (d) => output += d);
-      proc.stderr.on("data", (d) => stderrOut += d);
+      proc.stdout!.on("data", (d: Buffer) => output += d);
+      proc.stderr!.on("data", (d: Buffer) => stderrOut += d);
 
-      proc.on("close", (code) => {
+      proc.on("close", (code: number | null) => {
         if (settled) return;
         settled = true;
         const raw = output.trim();
         const result = raw.toUpperCase();
 
-        let intent;
+        let intent: IntentClassification;
         if (result.includes("SEND_FILE") || result.includes("SEND FILE")) {
           intent = "send_file";
         } else if (result.includes("CHAT") && !result.includes("ACTION")) {
@@ -156,12 +157,12 @@ Classification:`;
           intent = "action";
         }
 
-        const icons = { chat: "CHAT ✓", action: "ACTION 🔐", send_file: "SEND_FILE 📎" };
+        const icons: Record<IntentClassification, string> = { chat: "CHAT ✓", action: "ACTION 🔐", send_file: "SEND_FILE 📎" };
         console.log(`${ts()} 🔍 classifier: exit=${code} raw="${raw}" stderr="${stderrOut.trim().slice(0, 200)}" → ${icons[intent]}`);
         resolve(intent);
       });
 
-      proc.on("error", (err) => {
+      proc.on("error", (err: Error) => {
         if (settled) return;
         settled = true;
         console.log(`${ts()} 🔍 classifier: spawn error: ${err.message} → ACTION (fallback)`);
@@ -180,7 +181,7 @@ Classification:`;
 
   // ── Ask for approval via Telegram before running Claude ──
 
-  function requestApproval(chatId, userText) {
+  function requestApproval(chatId: number, userText: string): Promise<boolean> {
     return new Promise((resolve) => {
       const approvalId = randomUUID().slice(0, 8);
       const preview = userText.length > 200 ? userText.slice(0, 200) + "…" : userText;
@@ -226,9 +227,9 @@ Classification:`;
 
   // ── Call Claude Code CLI ──
 
-  function callClaude(prompt, chatId, skipPerms, extraSystemPrompt) {
+  function callClaude(prompt: string, chatId: number, skipPerms: boolean, extraSystemPrompt?: string | null): Promise<ClaudeResult> {
     return new Promise((resolve, reject) => {
-      const args = [
+      const args: string[] = [
         "-p",
         "--verbose",
         "--output-format", "stream-json",
@@ -248,13 +249,13 @@ CRITICAL RULES:
 5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.`;
 
       // Combine core + user system prompt + extra (e.g. file sending instructions)
-      const sysPromptParts = [corePrompt, config.systemPrompt, extraSystemPrompt].filter(Boolean);
+      const sysPromptParts = [corePrompt, config.systemPrompt, extraSystemPrompt].filter(Boolean) as string[];
       if (sysPromptParts.length > 0) {
         args.push("--append-system-prompt", sysPromptParts.join("\n\n"));
       }
 
       // Session management: resume active session, auto-resume last, or create new
-      let activeSessionId = getActiveSession(chatId);
+      let activeSessionId: string | null = getActiveSession(chatId);
       if (!activeSessionId) {
         // Auto-resume most recent session if one exists
         const sessions = listClaudeSessions(config.workingDir, 1);
@@ -281,11 +282,11 @@ CRITICAL RULES:
       });
 
       let resultText = "";
-      let activities = [];        // log of what claude is doing
-      let currentTool = null;
-      let currentToolName = null;
+      let activities: string[] = [];        // log of what claude is doing
+      let currentTool: string | null = null;
+      let currentToolName: string | null = null;
       let currentToolInput = "";
-      let createdFiles = [];      // file paths from Write/Edit tool_use
+      let createdFiles: string[] = [];      // file paths from Write/Edit tool_use
       let settled = false;
       let lineBuf = "";
       let stderr = "";
@@ -294,12 +295,12 @@ CRITICAL RULES:
       // ── rolling idle timeout ──
       let idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
 
-      function resetIdle() {
+      function resetIdle(): void {
         clearTimeout(idleTimer);
         idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
       }
 
-      function killIdle() {
+      function killIdle(): void {
         if (!settled) {
           proc.kill("SIGTERM");
           cleanup();
@@ -307,31 +308,35 @@ CRITICAL RULES:
         }
       }
 
-      function addActivity(text) {
+      function addActivity(text: string): void {
         activities.push(text);
         if (activities.length > 10) activities = activities.slice(-10);
       }
 
       // Build a human-readable description of what a tool did
-      function describeToolUse(name, input) {
+      function describeToolUse(name: string, input: string): string | null {
         try {
-          const parsed = typeof input === "string" ? JSON.parse(input) : input;
+          const parsed = typeof input === "string" ? JSON.parse(input) as unknown : input;
+          const p = parsed as Record<string, unknown>;
           switch (name) {
-            case "Read":
-              const file = parsed.file_path?.split("/").pop() || "file";
+            case "Read": {
+              const file = (p.file_path as string | undefined)?.split("/").pop() || "file";
               return `📖 Reading ${file}`;
-            case "Edit":
-              const edited = parsed.file_path?.split("/").pop() || "file";
+            }
+            case "Edit": {
+              const edited = (p.file_path as string | undefined)?.split("/").pop() || "file";
               return `✏️ Editing ${edited}`;
-            case "Write":
-              const written = parsed.file_path?.split("/").pop() || "file";
+            }
+            case "Write": {
+              const written = (p.file_path as string | undefined)?.split("/").pop() || "file";
               return `📝 Writing ${written}`;
+            }
             case "Bash": {
-              const cmd = parsed.command || "";
+              const cmd = (p.command as string) || "";
               // "cat > /long/path/file.py" → "📝 Creating file.py"
               const catMatch = cmd.match(/^cat\s*>\s*(.+)/);
               if (catMatch) {
-                const fname = catMatch[1].trim().split("/").pop().split("'")[0].split('"')[0].trim();
+                const fname = catMatch[1].trim().split("/").pop()!.split("'")[0].split('"')[0].trim();
                 return `📝 Creating ${fname}`;
               }
               // "git ..." → show full git command
@@ -342,11 +347,11 @@ CRITICAL RULES:
               return `⚡ ${cmd.slice(0, 60)}`;
             }
             case "Grep":
-              return `🔍 Searching: ${(parsed.pattern || "").slice(0, 40)}`;
+              return `🔍 Searching: ${((p.pattern as string) || "").slice(0, 40)}`;
             case "Glob":
-              return `📂 Finding: ${(parsed.pattern || "").slice(0, 40)}`;
+              return `📂 Finding: ${((p.pattern as string) || "").slice(0, 40)}`;
             case "Agent":
-              return `🤖 Sub-agent: ${(parsed.description || "working").slice(0, 40)}`;
+              return `🤖 Sub-agent: ${((p.description as string) || "working").slice(0, 40)}`;
             default:
               if (/^(Task|Todo)/.test(name)) return null; // skip internal tools
               return `🔧 ${name}`;
@@ -357,32 +362,36 @@ CRITICAL RULES:
       }
 
       // ── parse stream-json events ──
-      function handleEvent(line) {
+      function handleEvent(line: string): void {
         if (!line.trim()) return;
 
-        let ev;
+        let ev: unknown;
         try { ev = JSON.parse(line); } catch { return; }
 
-        if (ev.type === "stream_event") {
-          const e = ev.event;
+        const event = ev as Record<string, unknown>;
+
+        if (event.type === "stream_event") {
+          const e = event.event as Record<string, unknown> | undefined;
 
           // text being generated
-          if (e?.delta?.type === "text_delta" && e.delta.text) {
-            resultText += e.delta.text;
+          const delta = e?.delta as Record<string, unknown> | undefined;
+          if (delta?.type === "text_delta" && delta.text) {
+            resultText += delta.text as string;
             if (!currentTool) currentTool = "writing";
           }
 
           // tool use started
-          if (e?.type === "content_block_start" && e.content_block?.type === "tool_use") {
-            const name = e.content_block.name || "tool";
+          const contentBlock = e?.content_block as Record<string, unknown> | undefined;
+          if (e?.type === "content_block_start" && contentBlock?.type === "tool_use") {
+            const name = (contentBlock.name as string) || "tool";
             currentTool = name;
             currentToolName = name;
             currentToolInput = "";
           }
 
           // tool input — accumulate
-          if (e?.delta?.type === "input_json_delta" && e.delta.partial_json) {
-            currentToolInput += e.delta.partial_json;
+          if (delta?.type === "input_json_delta" && delta.partial_json) {
+            currentToolInput += delta.partial_json as string;
           }
 
           // block finished — log a readable description
@@ -391,8 +400,8 @@ CRITICAL RULES:
               // track created/edited files
               if (/^(Write|Edit|write|edit)$/.test(currentToolName) && currentToolInput) {
                 try {
-                  const input = JSON.parse(currentToolInput);
-                  if (input.file_path) createdFiles.push(input.file_path);
+                  const input = JSON.parse(currentToolInput) as Record<string, unknown>;
+                  if (input.file_path) createdFiles.push(input.file_path as string);
                 } catch {}
               }
               // add readable activity
@@ -406,15 +415,16 @@ CRITICAL RULES:
         }
 
         // final result
-        if (ev.type === "result") {
-          if (ev.result) resultText = ev.result;
+        if (event.type === "result") {
+          const resultEvent = event as Record<string, unknown>;
+          if (resultEvent.result) resultText = resultEvent.result as string;
         }
       }
 
       // ── periodic progress updates as new messages ──
       const progressTimer = setInterval(() => sendProgress(), PROGRESS_INTERVAL);
 
-      async function sendProgress() {
+      async function sendProgress(): Promise<void> {
         if (settled) return;
 
         // only send if there are new activities
@@ -431,27 +441,27 @@ CRITICAL RULES:
         } catch {}
       }
 
-      function cleanup() {
+      function cleanup(): void {
         settled = true;
         clearTimeout(idleTimer);
         clearInterval(progressTimer);
       }
 
       // ── parse newline-delimited JSON from stdout ──
-      proc.stdout.on("data", (chunk) => {
+      proc.stdout!.on("data", (chunk: Buffer) => {
         resetIdle();
         lineBuf += chunk.toString();
         const lines = lineBuf.split("\n");
-        lineBuf = lines.pop();
+        lineBuf = lines.pop()!;
         for (const line of lines) handleEvent(line);
       });
 
-      proc.stderr.on("data", (d) => {
+      proc.stderr!.on("data", (d: Buffer) => {
         stderr += d;
         resetIdle();
       });
 
-      proc.on("close", async (code) => {
+      proc.on("close", async (code: number | null) => {
         if (settled) return;
         if (lineBuf.trim()) handleEvent(lineBuf);
         cleanup();
@@ -459,7 +469,7 @@ CRITICAL RULES:
         else reject(new Error(`claude exit ${code}: ${stderr}`));
       });
 
-      proc.on("error", (err) => {
+      proc.on("error", (err: Error) => {
         if (settled) return;
         cleanup();
         reject(err);
@@ -467,8 +477,8 @@ CRITICAL RULES:
     });
   }
 
-  function splitMessage(text, maxLen = 4000) {
-    const parts = [];
+  function splitMessage(text: string, maxLen: number = 4000): string[] {
+    const parts: string[] = [];
     while (text.length > 0) {
       if (text.length <= maxLen) {
         parts.push(text);
@@ -484,22 +494,22 @@ CRITICAL RULES:
 
   // ── Telegram commands ──
 
-  function isAllowed(m) {
+  function isAllowed(m: TelegramBot.Message): boolean {
     const userId = m.from?.id;
-    if (allowed.length > 0 && !allowed.includes(userId)) {
-      console.log(msg.gatewayBlocked(userId, m.from?.username));
+    if (allowed.length > 0 && !allowed.includes(userId!)) {
+      console.log(msg.gatewayBlocked(userId!, m.from?.username || ""));
       return false;
     }
     return true;
   }
 
-  bot.onText(/\/start$/, async (m) => {
+  bot.onText(/\/start$/, async (m: TelegramBot.Message) => {
     if (!isAllowed(m)) return;
     await bot.sendMessage(m.chat.id, msg.botWelcome);
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /start`);
   });
 
-  bot.onText(/\/new$/, async (m) => {
+  bot.onText(/\/new$/, async (m: TelegramBot.Message) => {
     if (!isAllowed(m)) return;
     clearActiveSession(m.chat.id);
     chatFiles.delete(m.chat.id);
@@ -507,7 +517,7 @@ CRITICAL RULES:
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /new (session cleared)`);
   });
 
-  bot.onText(/\/status$/, async (m) => {
+  bot.onText(/\/status$/, async (m: TelegramBot.Message) => {
     if (!isAllowed(m)) return;
     const chatId = m.chat.id;
     const activeId = getActiveSession(chatId);
@@ -527,7 +537,7 @@ CRITICAL RULES:
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /status`);
   });
 
-  bot.onText(/\/sessions$/, async (m) => {
+  bot.onText(/\/sessions$/, async (m: TelegramBot.Message) => {
     if (!isAllowed(m)) return;
     const chatId = m.chat.id;
     const sessions = listClaudeSessions(config.workingDir);
@@ -556,7 +566,7 @@ CRITICAL RULES:
 
   // ── Inline keyboard callbacks ──
 
-  bot.on("callback_query", async (query) => {
+  bot.on("callback_query", async (query: TelegramBot.CallbackQuery) => {
     const data = query.data;
     const chatId = query.message?.chat?.id;
     if (!chatId || !data) return;
@@ -581,7 +591,7 @@ CRITICAL RULES:
         try {
           await bot.editMessageReplyMarkup(
             { inline_keyboard: [[{ text: `${icon} ${label}`, callback_data: "noop" }]] },
-            { chat_id: chatId, message_id: query.message.message_id }
+            { chat_id: chatId, message_id: query.message!.message_id }
           );
         } catch {}
 
@@ -616,7 +626,7 @@ CRITICAL RULES:
 
   // ── Regular messages ──
 
-  bot.on("message", async (m) => {
+  bot.on("message", async (m: TelegramBot.Message) => {
     const chatId = m.chat.id;
     const userId = m.from?.id;
     let text = m.text;
@@ -627,8 +637,8 @@ CRITICAL RULES:
     // Skip commands — already handled by onText
     if (text && text.startsWith("/")) return;
 
-    if (allowed.length > 0 && !allowed.includes(userId)) {
-      console.log(msg.gatewayBlocked(userId, m.from?.username));
+    if (allowed.length > 0 && !allowed.includes(userId!)) {
+      console.log(msg.gatewayBlocked(userId!, m.from?.username || ""));
       return;
     }
 
@@ -641,10 +651,10 @@ CRITICAL RULES:
       await bot.sendMessage(chatId, msg.audioTranscribing || "🎤 Transcribing audio...").catch(() => {});
       bot.sendChatAction(chatId, "typing").catch(() => {});
 
-      let downloadedPath = null;
-      let wavPath = null;
+      let downloadedPath: string | null = null;
+      let wavPath: string | null = null;
       try {
-        downloadedPath = await downloadTelegramFile(bot, fileId);
+        downloadedPath = await downloadTelegramFile(bot, fileId!);
         wavPath = convertToWav(downloadedPath);
         if (!wavPath) {
           await bot.sendMessage(chatId, msg.audioConversionFailed || "Failed to convert audio.");
@@ -657,7 +667,7 @@ CRITICAL RULES:
         }
         text = transcribed;
       } catch (err) {
-        console.error(`Audio processing failed: ${err.message}`);
+        console.error(`Audio processing failed: ${(err as Error).message}`);
         await bot.sendMessage(chatId, msg.audioTranscriptionFailed || "Failed to transcribe audio.").catch(() => {});
         return;
       } finally {
@@ -668,16 +678,16 @@ CRITICAL RULES:
     console.log(`[${new Date().toISOString()}] 📩 ${m.from?.username}: "${text}"`);
 
     // ── Smart approval: classify intent, only ask for actions ──
-    let skipPerms = config.skipPermissions;
+    let skipPerms: boolean = config.skipPermissions;
     let wantsFiles = false;
 
     if (!skipPerms) {
       console.log(`[${new Date().toISOString()}] 🛡️  approval mode — classifying intent...`);
-      const intent = await classifyIntent(text);
+      const intent: IntentClassification = await classifyIntent(text!);
 
       if (intent === "action") {
         console.log(`[${new Date().toISOString()}] 🔐 action detected — asking user for approval`);
-        const approved = await requestApproval(chatId, text);
+        const approved: boolean = await requestApproval(chatId, text!);
         if (!approved) {
           console.log(`[${new Date().toISOString()}] ❌ ${m.from?.username}: denied → skipping`);
           return;
@@ -701,7 +711,7 @@ CRITICAL RULES:
     }, 4000);
 
     // Build extra system prompt for file sending and cross-chat messaging
-    let extraSysPrompt = null;
+    let extraSysPrompt: string | null = null;
     const tracked = chatFiles.get(chatId) || [];
     const fileList = tracked.length > 0
       ? tracked.map((f) => `  - ${f}`).join("\n")
@@ -757,7 +767,7 @@ ${fileList}`;
 
     await withChatLock(chatId, async () => {
       try {
-        const { text: response, files } = await callClaude(text, chatId, skipPerms, extraSysPrompt);
+        const { text: response, files } = await callClaude(text!, chatId, skipPerms, extraSysPrompt);
         clearInterval(typingInterval);
 
         if (wantsFiles) {
@@ -779,8 +789,8 @@ ${fileList}`;
 
         // Parse [SEND_FILE:/path] tags from Claude's response
         // Also handle wrong format [SEND_FILE:chatid:/path] where Claude mixed up SEND_FILE and SEND_FILE_TO
-        const sendFileTags = [...response.matchAll(/\[SEND_FILE:([^\]]+)\]/g)].map((m) => {
-          const raw = m[1].trim();
+        const sendFileTags = [...response.matchAll(/\[SEND_FILE:([^\]]+)\]/g)].map((match) => {
+          const raw = match[1].trim();
           const parts = raw.split(":");
           if (parts.length >= 2 && /^-?\d+$/.test(parts[0].trim()) && parts[1].startsWith("/")) {
             return parts.slice(1).join(":").trim();
@@ -789,16 +799,16 @@ ${fileList}`;
         });
 
         // Parse [SEND_TO:<chatId>:<message>] tags for cross-chat messaging
-        const sendToTags = [...response.matchAll(/\[SEND_TO:(-?\d+):([^\]]+)\]/g)].map((m) => ({
-          targetChatId: Number(m[1]),
-          message: m[2].trim(),
+        const sendToTags = [...response.matchAll(/\[SEND_TO:(-?\d+):([^\]]+)\]/g)].map((match) => ({
+          targetChatId: Number(match[1]),
+          message: match[2].trim(),
         }));
 
         // Parse [SEND_FILE_TO:<chatId>:/path] and [SEND_FILE_TO:<chatId>:/path:<caption>] tags
-        const sendFileToTags = [...response.matchAll(/\[SEND_FILE_TO:(-?\d+):([^:\]]+)(?::([^\]]*))?\]/g)].map((m) => ({
-          targetChatId: Number(m[1]),
-          filePath: m[2].trim(),
-          caption: m[3]?.trim() || undefined,
+        const sendFileToTags = [...response.matchAll(/\[SEND_FILE_TO:(-?\d+):([^:\]]+)(?::([^\]]*))?\]/g)].map((match) => ({
+          targetChatId: Number(match[1]),
+          filePath: match[2].trim(),
+          caption: match[3]?.trim() || undefined,
         }));
 
         // Send the response text (strip all special tags so user doesn't see them)
@@ -834,7 +844,7 @@ ${fileList}`;
               console.log(`[${new Date().toISOString()}] -> file not found: ${filePath}`);
             }
           } catch (fileErr) {
-            console.error(`Failed to send file ${filePath}:`, fileErr.message);
+            console.error(`Failed to send file ${filePath}:`, (fileErr as Error).message);
           }
         }
 
@@ -844,8 +854,8 @@ ${fileList}`;
             await sendText(bot, targetChatId, message);
             console.log(`[${new Date().toISOString()}] -> sent message to ${targetChatId}: "${message.slice(0, 60)}"`);
           } catch (sendErr) {
-            console.error(`Failed to send to ${targetChatId}:`, sendErr.message);
-            await bot.sendMessage(chatId, `⚠️ ${msg.sendToFailed?.(targetChatId) || `Failed to send to ${targetChatId}: ${sendErr.message}`}`).catch(() => {});
+            console.error(`Failed to send to ${targetChatId}:`, (sendErr as Error).message);
+            await bot.sendMessage(chatId, `⚠️ ${msg.sendToFailed?.(targetChatId) || `Failed to send to ${targetChatId}: ${(sendErr as Error).message}`}`).catch(() => {});
           }
         }
 
@@ -860,22 +870,22 @@ ${fileList}`;
               await bot.sendMessage(chatId, `⚠️ File not found: ${filePath}`).catch(() => {});
             }
           } catch (fileErr) {
-            console.error(`Failed to send file to ${targetChatId}:`, fileErr.message);
-            await bot.sendMessage(chatId, `⚠️ ${msg.sendToFailed?.(targetChatId) || `Failed to send file to ${targetChatId}: ${fileErr.message}`}`).catch(() => {});
+            console.error(`Failed to send file to ${targetChatId}:`, (fileErr as Error).message);
+            await bot.sendMessage(chatId, `⚠️ ${msg.sendToFailed?.(targetChatId) || `Failed to send file to ${targetChatId}: ${(fileErr as Error).message}`}`).catch(() => {});
           }
         }
 
         console.log(`[${new Date().toISOString()}] -> replied (${response.length} chars)`);
       } catch (err) {
         clearInterval(typingInterval);
-        console.error("Error:", err.message);
+        console.error("Error:", (err as Error).message);
 
         // Session error recovery: if resume failed, clear session and retry
-        if (err.message && err.message.includes("session")) {
+        if ((err as Error).message && (err as Error).message.includes("session")) {
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
           clearActiveSession(chatId);
           try {
-            const { text: retryResponse } = await callClaude(text, chatId, skipPerms);
+            const { text: retryResponse } = await callClaude(text!, chatId, skipPerms);
             if (retryResponse) {
               const parts = splitMessage(retryResponse);
               for (const part of parts) {
@@ -887,17 +897,17 @@ ${fileList}`;
               return;
             }
           } catch (retryErr) {
-            console.error("Retry error:", retryErr.message);
+            console.error("Retry error:", (retryErr as Error).message);
           }
           await bot.sendMessage(chatId, msg.sessionRetry);
         } else {
-          await bot.sendMessage(chatId, `Error: ${err.message}`);
+          await bot.sendMessage(chatId, `Error: ${(err as Error).message}`);
         }
       }
     });
   });
 
-  bot.on("polling_error", (err) => {
+  bot.on("polling_error", (err: Error) => {
     console.error("Polling error:", err.message);
   });
 

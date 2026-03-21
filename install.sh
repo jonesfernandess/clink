@@ -129,6 +129,11 @@ step "Installing dependencies..."
 npm install --silent 2>/dev/null
 info "Dependencies installed"
 
+# Build TypeScript
+step "Building TypeScript..."
+npm run build 2>/dev/null
+info "Build complete"
+
 # Install globally
 step "Installing globally..."
 npm install -g . --silent 2>/dev/null

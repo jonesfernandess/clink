@@ -1,4 +1,6 @@
-const messages = {
+import type { Messages, SupportedLanguage } from "./types.js";
+
+const messages: Record<SupportedLanguage, Messages> = {
   en: {
     intro: "Claude Code on your phone via Telegram",
     token: "Token",
@@ -18,8 +20,6 @@ const messages = {
     configured: "configured",
     stopped: "stopped",
     running: "running",
-
-    // Main menu
     menuTitle: "What would you like to do?",
     menuStart: "Start gateway",
     menuToken: "Telegram token",
@@ -33,35 +33,25 @@ const messages = {
     ready: "ready",
     configureTokenFirst: "configure token first",
     required: "required",
-    userCount: (n) => `${n} user(s)`,
+    userCount: (n: number) => `${n} user(s)`,
     goodbye: "Goodbye!",
-
-    // Start
     noUsersWarning: "No users in allowlist — anyone can use the gateway. Continue?",
     startingGateway: "Starting gateway...",
     securityNote: "Security guaranteed by user allowlist",
-
-    // Token
     tokenPrompt: "Telegram bot token",
     tokenPlaceholder: "Paste the token from @BotFather",
     tokenRequired: "Token is required",
     tokenInvalid: "Invalid token — expected format: 123456:ABC-DEF",
     tokenSaved: "Token saved!",
-
-    // Model
     modelPrompt: "Claude model",
     sonnetHint: "fast, good cost-benefit",
     opusHint: "most capable, slower",
     haikuHint: "fastest, cheapest",
-    modelChanged: (m) => `Model changed to ${m}`,
-
-    // Workdir
+    modelChanged: (m: string) => `Model changed to ${m}`,
     workdirPrompt: "Claude working directory",
-    workdirNotFound: (d) => `Directory not found: ${d}`,
-    workdirChanged: (d) => `Directory changed to ${d}`,
-
-    // Users
-    currentUsers: (u) => `Current users: ${u}`,
+    workdirNotFound: (d: string) => `Directory not found: ${d}`,
+    workdirChanged: (d: string) => `Directory changed to ${d}`,
+    currentUsers: (u: string) => `Current users: ${u}`,
     noUsersConfigured: "No users configured — anyone can use",
     userIdHint: "Tip: send any message to the bot and check the log for your ID",
     manageUsers: "Manage users",
@@ -73,15 +63,13 @@ const messages = {
     userIdPrompt: "Telegram user ID",
     userIdPlaceholder: "e.g. 123456789",
     userIdInvalid: "ID must be a number",
-    userAdded: (id) => `User ${id} added!`,
+    userAdded: (id: string | number) => `User ${id} added!`,
     userAlreadyExists: "User already in the list",
     removeWhich: "Remove which user?",
-    userRemoved: (id) => `User ${id} removed!`,
+    userRemoved: (id: number) => `User ${id} removed!`,
     clearConfirm: "Are you sure? Anyone will be able to use the gateway.",
     listCleared: "List cleared!",
     listEmpty: "empty list",
-
-    // Permissions
     permCurrentAuto: "Current mode: autonomous — Claude executes everything without asking",
     permCurrentSafe: "Current mode: safe — Claude asks for approval via Telegram",
     permPrompt: "Permissions mode",
@@ -93,18 +81,12 @@ const messages = {
     permSafeEnabled: "Approval mode enabled — permissions will be sent via Telegram",
     permAutoNote: "Security guaranteed by user allowlist",
     permSafeNote: "You will receive Allow/Deny buttons on Telegram for each tool use",
-
-    // Prompt
     promptMessage: "Additional system prompt",
     promptPlaceholder: "Extra instructions for Claude (optional)",
     promptSaved: "System prompt saved!",
     promptRemoved: "System prompt removed!",
-
-    // Language
     languagePrompt: "Interface language",
-    languageChanged: (l) => `Language changed to ${l}`,
-
-    // Security disclaimer
+    languageChanged: (l: string) => `Language changed to ${l}`,
     disclaimerTitle: "Security — please read.",
     disclaimerLine1: "This bot can read files, run commands, and modify your system",
     disclaimerLine2: "on behalf of anyone in the allowed users list.",
@@ -118,18 +100,16 @@ const messages = {
     disclaimerRec3: "- Do not expose the bot to untrusted users",
     disclaimerConfirm: "I understand this is powerful and inherently risky. Continue?",
     disclaimerCancelled: "Setup cancelled.",
-
-    // Wizard
     wizardWelcome: "Welcome! Let's set up CLINK.",
     wizardChecking: "Checking prerequisites...",
     wizardClaudeFound: "Claude CLI found",
-    wizardClaudeVersion: (v) => `version ${v}`,
+    wizardClaudeVersion: (v: string) => `version ${v}`,
     wizardClaudeNotFound: "Claude CLI not found",
     wizardClaudeInstall: "Install it first: npm install -g @anthropic-ai/claude-code",
     wizardClaudeAuth: "Claude CLI is authenticated",
     wizardClaudeNotAuth: "Claude CLI is not authenticated — run 'claude' and log in first",
     wizardLanguage: "Choose your language",
-    wizardStep: (n, total) => `Step ${n}/${total}`,
+    wizardStep: (n: number, total: number) => `Step ${n}/${total}`,
     wizardTokenIntro: "You need a Telegram bot token. Get one from @BotFather on Telegram:",
     wizardTokenStep1: "1. Open Telegram and search for @BotFather",
     wizardTokenStep2: "2. Send /newbot and follow the instructions",
@@ -141,13 +121,11 @@ const messages = {
     wizardDone: "Setup complete! Run 'clink gateway' or select Start gateway from the menu.",
     wizardReady: "You're all set!",
     wizardStartNow: "Start gateway now?",
-
-    // Sessions & Commands
     sessionCleared: "Session cleared! Next message starts a fresh conversation.",
     cmdNewDesc: "Start a new conversation",
     cmdStatusDesc: "Show gateway status",
     botWelcome: "Welcome! Send any message to start chatting with Claude.",
-    sessionInfo: (id, count) => `Session: \`${id.slice(0, 8)}...\` — ${count} message(s)`,
+    sessionInfo: (id: string, count: number) => `Session: \`${id.slice(0, 8)}...\` — ${count} message(s)`,
     messagesInSession: "messages in session",
     uptime: "Uptime",
     sessionNone: "No active session — send a message to start one.",
@@ -158,8 +136,6 @@ const messages = {
     sessionResumed: "Session resumed!",
     sessionResumedLong: "Resumed session:",
     sessionNotFound: "Session not found",
-
-    // Telegram permissions
     permTitle: "Permission",
     permAllow: "Allow",
     permDeny: "Deny",
@@ -168,8 +144,6 @@ const messages = {
     permExpired: "Expired",
     permTimedOut: "Auto-denied (timeout — 2 min)",
     permApprovalHint: "Allow Claude to use all tools for this request?",
-
-    // Send command
     sendPrompt: "What do you want to send?",
     sendChooseAction: "Choose an action",
     sendTextOption: "Send text",
@@ -182,32 +156,25 @@ const messages = {
     sendSuccess: "Sent!",
     sendNoUsers: "No allowed users configured. Add one with 'clink onboard' or the menu.",
     sendChooseUser: "Send to which user?",
-    sendFileNotFound: (f) => `File not found: ${f}`,
+    sendFileNotFound: (f: string) => `File not found: ${f}`,
     sendSending: "Sending...",
     sendInvalidChatId: "Invalid chat ID. Use --to <id> or --to-group <id> with a valid numeric ID.",
-    sendToFailed: (id) => `Failed to send to chat ${id}`,
-
-    // Errors
+    sendToFailed: (id: number) => `Failed to send to chat ${id}`,
     tokenNotConfigured: "Token not configured. Run",
     toConfigure: "to configure.",
-
-    // Gateway
     gatewayStarted: "Gateway started!",
     gatewayModel: "Model",
     gatewayDirectory: "Directory",
     gatewayPermissions: "Permissions",
     gatewayAllowed: "Allowed",
     gatewayWaiting: "Gateway listening for messages... (Ctrl+C to stop)",
-    gatewayBlocked: (id, user) => `[BLOCKED] user ${id} (${user})`,
+    gatewayBlocked: (id: number, user: string) => `[BLOCKED] user ${id} (${user})`,
     noResponse: "(no response)",
-
-    // Audio transcription
-    audioTranscribing: "🎤 Transcribing audio...",
+    audioTranscribing: "\u{1F3A4} Transcribing audio...",
     audioTranscription: "Transcription",
     audioConversionFailed: "Failed to convert audio. Make sure ffmpeg is installed.",
     audioTranscriptionFailed: "Failed to transcribe audio. Make sure faster-whisper is installed.",
   },
-
   pt: {
     intro: "Claude Code no seu celular via Telegram",
     token: "Token",
@@ -227,7 +194,6 @@ const messages = {
     configured: "configurado",
     stopped: "parado",
     running: "rodando",
-
     menuTitle: "O que deseja fazer?",
     menuStart: "Iniciar gateway",
     menuToken: "Token do Telegram",
@@ -241,30 +207,25 @@ const messages = {
     ready: "pronto",
     configureTokenFirst: "configure o token primeiro",
     required: "obrigatorio",
-    userCount: (n) => `${n} usuario(s)`,
+    userCount: (n: number) => `${n} usuario(s)`,
     goodbye: "Ate mais!",
-
     noUsersWarning: "Nenhum usuario na allowlist — qualquer pessoa podera usar o gateway. Continuar?",
     startingGateway: "Iniciando gateway...",
     securityNote: "Seguranca garantida pela allowlist de usuarios",
-
     tokenPrompt: "Token do bot Telegram",
     tokenPlaceholder: "Cole o token do @BotFather",
     tokenRequired: "Token obrigatorio",
     tokenInvalid: "Token invalido — formato esperado: 123456:ABC-DEF",
     tokenSaved: "Token salvo!",
-
     modelPrompt: "Modelo do Claude",
     sonnetHint: "rapido, bom custo-beneficio",
     opusHint: "mais capaz, mais lento",
     haikuHint: "mais rapido, mais barato",
-    modelChanged: (m) => `Modelo alterado para ${m}`,
-
+    modelChanged: (m: string) => `Modelo alterado para ${m}`,
     workdirPrompt: "Diretorio de trabalho do Claude",
-    workdirNotFound: (d) => `Diretorio nao encontrado: ${d}`,
-    workdirChanged: (d) => `Diretorio alterado para ${d}`,
-
-    currentUsers: (u) => `Usuarios atuais: ${u}`,
+    workdirNotFound: (d: string) => `Diretorio nao encontrado: ${d}`,
+    workdirChanged: (d: string) => `Diretorio alterado para ${d}`,
+    currentUsers: (u: string) => `Usuarios atuais: ${u}`,
     noUsersConfigured: "Nenhum usuario configurado — todos podem usar",
     userIdHint: "Dica: mande qualquer mensagem pro bot e veja o log para descobrir seu ID",
     manageUsers: "Gerenciar usuarios",
@@ -276,14 +237,13 @@ const messages = {
     userIdPrompt: "ID do usuario Telegram",
     userIdPlaceholder: "ex: 123456789",
     userIdInvalid: "ID deve ser um numero",
-    userAdded: (id) => `Usuario ${id} adicionado!`,
+    userAdded: (id: string | number) => `Usuario ${id} adicionado!`,
     userAlreadyExists: "Usuario ja esta na lista",
     removeWhich: "Remover qual usuario?",
-    userRemoved: (id) => `Usuario ${id} removido!`,
+    userRemoved: (id: number) => `Usuario ${id} removido!`,
     clearConfirm: "Tem certeza? Qualquer pessoa podera usar o gateway.",
     listCleared: "Lista limpa!",
     listEmpty: "lista vazia",
-
     permCurrentAuto: "Modo atual: autonomo — Claude executa tudo sem pedir aprovacao",
     permCurrentSafe: "Modo atual: seguro — Claude pede aprovacao via Telegram",
     permPrompt: "Modo de permissoes",
@@ -295,16 +255,12 @@ const messages = {
     permSafeEnabled: "Modo aprovacao ativado — permissoes serao enviadas via Telegram",
     permAutoNote: "Seguranca garantida pela allowlist de usuarios",
     permSafeNote: "Voce recebera botoes Permitir/Negar no Telegram para cada tool",
-
     promptMessage: "System prompt adicional",
     promptPlaceholder: "Instrucoes extras para o Claude (opcional)",
     promptSaved: "System prompt salvo!",
     promptRemoved: "System prompt removido!",
-
     languagePrompt: "Idioma da interface",
-    languageChanged: (l) => `Idioma alterado para ${l}`,
-
-    // Security disclaimer
+    languageChanged: (l: string) => `Idioma alterado para ${l}`,
     disclaimerTitle: "Seguranca — por favor, leia.",
     disclaimerLine1: "Este bot pode ler arquivos, executar comandos e modificar seu sistema",
     disclaimerLine2: "em nome de qualquer pessoa na lista de usuarios permitidos.",
@@ -318,17 +274,16 @@ const messages = {
     disclaimerRec3: "- Nao exponha o bot a usuarios nao confiaveis",
     disclaimerConfirm: "Eu entendo que isso e poderoso e inerentemente arriscado. Continuar?",
     disclaimerCancelled: "Configuracao cancelada.",
-
     wizardWelcome: "Bem-vindo! Vamos configurar o CLINK.",
     wizardChecking: "Verificando pre-requisitos...",
     wizardClaudeFound: "Claude CLI encontrado",
-    wizardClaudeVersion: (v) => `versao ${v}`,
+    wizardClaudeVersion: (v: string) => `versao ${v}`,
     wizardClaudeNotFound: "Claude CLI nao encontrado",
     wizardClaudeInstall: "Instale primeiro: npm install -g @anthropic-ai/claude-code",
     wizardClaudeAuth: "Claude CLI esta autenticado",
     wizardClaudeNotAuth: "Claude CLI nao esta autenticado — rode 'claude' e faca login primeiro",
     wizardLanguage: "Escolha seu idioma",
-    wizardStep: (n, total) => `Passo ${n}/${total}`,
+    wizardStep: (n: number, total: number) => `Passo ${n}/${total}`,
     wizardTokenIntro: "Voce precisa de um token de bot Telegram. Pegue um com o @BotFather:",
     wizardTokenStep1: "1. Abra o Telegram e procure @BotFather",
     wizardTokenStep2: "2. Envie /newbot e siga as instrucoes",
@@ -340,13 +295,11 @@ const messages = {
     wizardDone: "Configuracao completa! Rode 'clink gateway' ou selecione Iniciar gateway no menu.",
     wizardReady: "Tudo pronto!",
     wizardStartNow: "Iniciar gateway agora?",
-
-    // Sessions & Commands
     sessionCleared: "Sessao limpa! A proxima mensagem inicia uma conversa nova.",
     cmdNewDesc: "Iniciar nova conversa",
     cmdStatusDesc: "Mostrar status do gateway",
     botWelcome: "Bem-vindo! Envie qualquer mensagem para comecar a conversar com o Claude.",
-    sessionInfo: (id, count) => `Sessao: \`${id.slice(0, 8)}...\` — ${count} mensagem(ns)`,
+    sessionInfo: (id: string, count: number) => `Sessao: \`${id.slice(0, 8)}...\` — ${count} mensagem(ns)`,
     messagesInSession: "mensagens na sessao",
     uptime: "Tempo ativo",
     sessionNone: "Nenhuma sessao ativa — envie uma mensagem para iniciar.",
@@ -357,8 +310,6 @@ const messages = {
     sessionResumed: "Sessao retomada!",
     sessionResumedLong: "Sessao retomada:",
     sessionNotFound: "Sessao nao encontrada",
-
-    // Telegram permissions
     permTitle: "Permissao",
     permAllow: "Permitir",
     permDeny: "Negar",
@@ -367,8 +318,6 @@ const messages = {
     permExpired: "Expirado",
     permTimedOut: "Negado automaticamente (timeout — 2 min)",
     permApprovalHint: "Permitir que o Claude use todas as ferramentas para este pedido?",
-
-    // Send command
     sendPrompt: "O que voce quer enviar?",
     sendChooseAction: "Escolha uma acao",
     sendTextOption: "Enviar texto",
@@ -381,30 +330,25 @@ const messages = {
     sendSuccess: "Enviado!",
     sendNoUsers: "Nenhum usuario permitido configurado. Adicione um com 'clink onboard' ou no menu.",
     sendChooseUser: "Enviar para qual usuario?",
-    sendFileNotFound: (f) => `Arquivo nao encontrado: ${f}`,
+    sendFileNotFound: (f: string) => `Arquivo nao encontrado: ${f}`,
     sendSending: "Enviando...",
     sendInvalidChatId: "Chat ID invalido. Use --to <id> ou --to-group <id> com um ID numerico valido.",
-    sendToFailed: (id) => `Falha ao enviar para o chat ${id}`,
-
+    sendToFailed: (id: number) => `Falha ao enviar para o chat ${id}`,
     tokenNotConfigured: "Token nao configurado. Execute",
     toConfigure: "para configurar.",
-
     gatewayStarted: "Gateway iniciado!",
     gatewayModel: "Modelo",
     gatewayDirectory: "Diretorio",
     gatewayPermissions: "Permissoes",
     gatewayAllowed: "Permitidos",
     gatewayWaiting: "Gateway escutando mensagens... (Ctrl+C para parar)",
-    gatewayBlocked: (id, user) => `[BLOCKED] user ${id} (${user})`,
+    gatewayBlocked: (id: number, user: string) => `[BLOCKED] user ${id} (${user})`,
     noResponse: "(sem resposta)",
-
-    // Audio transcription
-    audioTranscribing: "🎤 Transcrevendo audio...",
+    audioTranscribing: "\u{1F3A4} Transcrevendo audio...",
     audioTranscription: "Transcricao",
     audioConversionFailed: "Falha ao converter audio. Certifique-se de que o ffmpeg esta instalado.",
     audioTranscriptionFailed: "Falha ao transcrever audio. Certifique-se de que o faster-whisper esta instalado.",
   },
-
   es: {
     intro: "Claude Code en tu celular via Telegram",
     token: "Token",
@@ -424,7 +368,6 @@ const messages = {
     configured: "configurado",
     stopped: "detenido",
     running: "corriendo",
-
     menuTitle: "Que deseas hacer?",
     menuStart: "Iniciar gateway",
     menuToken: "Token de Telegram",
@@ -438,30 +381,25 @@ const messages = {
     ready: "listo",
     configureTokenFirst: "configura el token primero",
     required: "obligatorio",
-    userCount: (n) => `${n} usuario(s)`,
+    userCount: (n: number) => `${n} usuario(s)`,
     goodbye: "Hasta luego!",
-
     noUsersWarning: "Ningun usuario en la allowlist — cualquiera podra usar el gateway. Continuar?",
     startingGateway: "Iniciando gateway...",
     securityNote: "Seguridad garantizada por la allowlist de usuarios",
-
     tokenPrompt: "Token del bot Telegram",
     tokenPlaceholder: "Pega el token de @BotFather",
     tokenRequired: "Token obligatorio",
     tokenInvalid: "Token invalido — formato esperado: 123456:ABC-DEF",
     tokenSaved: "Token guardado!",
-
     modelPrompt: "Modelo de Claude",
     sonnetHint: "rapido, buena relacion costo-beneficio",
     opusHint: "mas capaz, mas lento",
     haikuHint: "mas rapido, mas barato",
-    modelChanged: (m) => `Modelo cambiado a ${m}`,
-
+    modelChanged: (m: string) => `Modelo cambiado a ${m}`,
     workdirPrompt: "Directorio de trabajo de Claude",
-    workdirNotFound: (d) => `Directorio no encontrado: ${d}`,
-    workdirChanged: (d) => `Directorio cambiado a ${d}`,
-
-    currentUsers: (u) => `Usuarios actuales: ${u}`,
+    workdirNotFound: (d: string) => `Directorio no encontrado: ${d}`,
+    workdirChanged: (d: string) => `Directorio cambiado a ${d}`,
+    currentUsers: (u: string) => `Usuarios actuales: ${u}`,
     noUsersConfigured: "Ningun usuario configurado — todos pueden usar",
     userIdHint: "Consejo: envia cualquier mensaje al bot y revisa el log para tu ID",
     manageUsers: "Gestionar usuarios",
@@ -473,14 +411,13 @@ const messages = {
     userIdPrompt: "ID del usuario Telegram",
     userIdPlaceholder: "ej: 123456789",
     userIdInvalid: "ID debe ser un numero",
-    userAdded: (id) => `Usuario ${id} agregado!`,
+    userAdded: (id: string | number) => `Usuario ${id} agregado!`,
     userAlreadyExists: "Usuario ya esta en la lista",
     removeWhich: "Eliminar cual usuario?",
-    userRemoved: (id) => `Usuario ${id} eliminado!`,
+    userRemoved: (id: number) => `Usuario ${id} eliminado!`,
     clearConfirm: "Estas seguro? Cualquiera podra usar el gateway.",
     listCleared: "Lista limpia!",
     listEmpty: "lista vacia",
-
     permCurrentAuto: "Modo actual: autonomo — Claude ejecuta todo sin pedir aprobacion",
     permCurrentSafe: "Modo actual: seguro — Claude pide aprobacion via Telegram",
     permPrompt: "Modo de permisos",
@@ -492,16 +429,12 @@ const messages = {
     permSafeEnabled: "Modo aprobacion activado — permisos seran enviados via Telegram",
     permAutoNote: "Seguridad garantizada por la allowlist de usuarios",
     permSafeNote: "Recibiras botones Permitir/Negar en Telegram para cada tool",
-
     promptMessage: "System prompt adicional",
     promptPlaceholder: "Instrucciones extras para Claude (opcional)",
     promptSaved: "System prompt guardado!",
     promptRemoved: "System prompt eliminado!",
-
     languagePrompt: "Idioma de la interfaz",
-    languageChanged: (l) => `Idioma cambiado a ${l}`,
-
-    // Security disclaimer
+    languageChanged: (l: string) => `Idioma cambiado a ${l}`,
     disclaimerTitle: "Seguridad — por favor, lea.",
     disclaimerLine1: "Este bot puede leer archivos, ejecutar comandos y modificar su sistema",
     disclaimerLine2: "en nombre de cualquier persona en la lista de usuarios permitidos.",
@@ -515,17 +448,16 @@ const messages = {
     disclaimerRec3: "- No exponga el bot a usuarios no confiables",
     disclaimerConfirm: "Entiendo que esto es poderoso e inherentemente riesgoso. Continuar?",
     disclaimerCancelled: "Configuracion cancelada.",
-
     wizardWelcome: "Bienvenido! Vamos a configurar CLINK.",
     wizardChecking: "Verificando prerequisitos...",
     wizardClaudeFound: "Claude CLI encontrado",
-    wizardClaudeVersion: (v) => `version ${v}`,
+    wizardClaudeVersion: (v: string) => `version ${v}`,
     wizardClaudeNotFound: "Claude CLI no encontrado",
     wizardClaudeInstall: "Instalalo primero: npm install -g @anthropic-ai/claude-code",
     wizardClaudeAuth: "Claude CLI esta autenticado",
     wizardClaudeNotAuth: "Claude CLI no esta autenticado — ejecuta 'claude' e inicia sesion primero",
     wizardLanguage: "Elige tu idioma",
-    wizardStep: (n, total) => `Paso ${n}/${total}`,
+    wizardStep: (n: number, total: number) => `Paso ${n}/${total}`,
     wizardTokenIntro: "Necesitas un token de bot Telegram. Obten uno de @BotFather:",
     wizardTokenStep1: "1. Abre Telegram y busca @BotFather",
     wizardTokenStep2: "2. Envia /newbot y sigue las instrucciones",
@@ -537,13 +469,11 @@ const messages = {
     wizardDone: "Configuracion completa! Ejecuta 'clink gateway' o selecciona Iniciar gateway en el menu.",
     wizardReady: "Todo listo!",
     wizardStartNow: "Iniciar gateway ahora?",
-
-    // Sessions & Commands
     sessionCleared: "Sesion borrada! El proximo mensaje inicia una conversacion nueva.",
     cmdNewDesc: "Iniciar nueva conversacion",
     cmdStatusDesc: "Mostrar estado del gateway",
     botWelcome: "Bienvenido! Envia cualquier mensaje para comenzar a chatear con Claude.",
-    sessionInfo: (id, count) => `Sesion: \`${id.slice(0, 8)}...\` — ${count} mensaje(s)`,
+    sessionInfo: (id: string, count: number) => `Sesion: \`${id.slice(0, 8)}...\` — ${count} mensaje(s)`,
     messagesInSession: "mensajes en la sesion",
     uptime: "Tiempo activo",
     sessionNone: "Ninguna sesion activa — envia un mensaje para iniciar.",
@@ -554,8 +484,6 @@ const messages = {
     sessionResumed: "Sesion retomada!",
     sessionResumedLong: "Sesion retomada:",
     sessionNotFound: "Sesion no encontrada",
-
-    // Telegram permissions
     permTitle: "Permiso",
     permAllow: "Permitir",
     permDeny: "Negar",
@@ -564,8 +492,6 @@ const messages = {
     permExpired: "Expirado",
     permTimedOut: "Denegado automaticamente (timeout — 2 min)",
     permApprovalHint: "Permitir que Claude use todas las herramientas para esta solicitud?",
-
-    // Send command
     sendPrompt: "Que quieres enviar?",
     sendChooseAction: "Elige una accion",
     sendTextOption: "Enviar texto",
@@ -578,39 +504,35 @@ const messages = {
     sendSuccess: "Enviado!",
     sendNoUsers: "Ningun usuario permitido configurado. Agrega uno con 'clink onboard' o en el menu.",
     sendChooseUser: "Enviar a cual usuario?",
-    sendFileNotFound: (f) => `Archivo no encontrado: ${f}`,
+    sendFileNotFound: (f: string) => `Archivo no encontrado: ${f}`,
     sendSending: "Enviando...",
     sendInvalidChatId: "Chat ID invalido. Usa --to <id> o --to-group <id> con un ID numerico valido.",
-    sendToFailed: (id) => `Error al enviar al chat ${id}`,
-
+    sendToFailed: (id: number) => `Error al enviar al chat ${id}`,
     tokenNotConfigured: "Token no configurado. Ejecuta",
     toConfigure: "para configurar.",
-
     gatewayStarted: "Gateway iniciado!",
     gatewayModel: "Modelo",
     gatewayDirectory: "Directorio",
     gatewayPermissions: "Permisos",
     gatewayAllowed: "Permitidos",
     gatewayWaiting: "Gateway escuchando mensajes... (Ctrl+C para parar)",
-    gatewayBlocked: (id, user) => `[BLOCKED] user ${id} (${user})`,
+    gatewayBlocked: (id: number, user: string) => `[BLOCKED] user ${id} (${user})`,
     noResponse: "(sin respuesta)",
-
-    // Audio transcription
-    audioTranscribing: "🎤 Transcribiendo audio...",
+    audioTranscribing: "\u{1F3A4} Transcribiendo audio...",
     audioTranscription: "Transcripcion",
     audioConversionFailed: "Error al convertir audio. Asegurate de que ffmpeg esta instalado.",
     audioTranscriptionFailed: "Error al transcribir audio. Asegurate de que faster-whisper esta instalado.",
   },
 };
 
-const LANGUAGE_NAMES = {
+export const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
   en: "English",
-  pt: "Portuguese",
-  es: "Spanish",
+  pt: "Portugues",
+  es: "Espanol",
 };
 
-export function t(lang) {
-  return messages[lang] || messages.en;
+export function t(lang: string): Messages {
+  return messages[lang as SupportedLanguage] ?? messages.en;
 }
 
-export { LANGUAGE_NAMES };
+export { LANGUAGE_NAMES as default };

@@ -2,10 +2,13 @@
   "name": "clink",
   "version": "1.0.0",
   "description": "Bridge between Claude Code and Telegram — use Claude Code from your phone",
-  "main": "cli.js",
+  "main": "dist/cli.js",
   "scripts": {
-    "gateway": "node cli.js gateway",
-    "start": "node cli.js gateway"
+    "build": "tsc",
+    "postbuild": "node -e \"const fs=require('fs');const f='dist/cli.js';fs.writeFileSync(f,'#!/usr/bin/env node\\n'+fs.readFileSync(f,'utf8'))\" && chmod +x dist/cli.js",
+    "dev": "tsc --watch",
+    "gateway": "node dist/cli.js gateway",
+    "start": "node dist/cli.js gateway"
   },
   "keywords": [
     "claude",
@@ -18,7 +21,7 @@
   "license": "ISC",
   "type": "module",
   "bin": {
-    "clink": "./cli.js"
+    "clink": "./dist/cli.js"
   },
   "systemDependencies": {
     "python3": ">= 3.8 (for audio transcription)",
@@ -31,5 +34,12 @@
     "figlet": "^1.11.0",
     "gradient-string": "^3.0.0",
     "node-telegram-bot-api": "^0.67.0"
+  },
+  "devDependencies": {
+    "@types/figlet": "^1.7.0",
+    "@types/gradient-string": "^1.1.6",
+    "@types/node": "^25.5.0",
+    "@types/node-telegram-bot-api": "^0.64.14",
+    "typescript": "^5.9.3"
   }
 }

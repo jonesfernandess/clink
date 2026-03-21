@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import figlet from "figlet";
@@ -14,6 +12,7 @@ import { join } from "path";
 import { t, LANGUAGE_NAMES } from "./i18n.js";
 import { runWizard } from "./wizard.js";
 import { listClaudeSessions } from "./session.js";
+import type { ClinkConfig, Messages, GatewayStatus, SupportedLanguage } from "./types.js";
 
 const accent = chalk.hex("#FF5A2D");
 const dim = chalk.dim;
@@ -23,11 +22,11 @@ const PID_FILE = join(homedir(), ".config", "clink", "gateway.pid");
 
 // ── PID helpers ──
 
-function savePid(pid) {
+function savePid(pid: number): void {
   writeFileSync(PID_FILE, String(pid));
 }
 
-function readPid() {
+function readPid(): number | null {
   try {
     return parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
   } catch {
@@ -35,11 +34,11 @@ function readPid() {
   }
 }
 
-function clearPid() {
+function clearPid(): void {
   try { unlinkSync(PID_FILE); } catch {}
 }
 
-function isRunning(pid) {
+function isRunning(pid: number | null): boolean {
   if (!pid) return false;
   try {
     process.kill(pid, 0);
@@ -49,7 +48,7 @@ function isRunning(pid) {
   }
 }
 
-function getGatewayStatus() {
+function getGatewayStatus(): GatewayStatus {
   const pid = readPid();
   if (pid && isRunning(pid)) return { running: true, pid };
   if (pid) clearPid(); // stale pid
@@ -58,7 +57,7 @@ function getGatewayStatus() {
 
 // ── Banner ──
 
-function showBanner() {
+function showBanner(): void {
   const banner = figlet.textSync("CLINK", {
     font: "ANSI Shadow",
     horizontalLayout: "fitted",
@@ -70,12 +69,12 @@ function showBanner() {
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
 }
 
-function maskToken(token, msg) {
+function maskToken(token: string, msg: Messages): string {
   if (!token) return chalk.red(msg.notConfigured);
   return chalk.green(token.slice(0, 6) + "..." + token.slice(-4));
 }
 
-function statusBar(config, msg) {
+function statusBar(config: ClinkConfig, msg: Messages): void {
   const gw = getGatewayStatus();
   const gwStatus = gw.running
     ? chalk.green(`● ${msg.running}`) + dim(` (pid ${gw.pid})`)
@@ -98,7 +97,7 @@ function statusBar(config, msg) {
 
 // ── Menu ──
 
-async function mainMenu() {
+async function mainMenu(): Promise<void> {
   const config = loadConfig();
   const msg = t(config.language);
 
@@ -108,7 +107,7 @@ async function mainMenu() {
 
   const gw = getGatewayStatus();
 
-  const options = [];
+  const options: Array<{ value: string; label: string; hint?: string }> = [];
   if (gw.running) {
     options.push({ value: "stop", label: `${chalk.red("■")} Stop gateway`, hint: `pid ${gw.pid}` });
     options.push({ value: "restart", label: `${chalk.yellow("↻")} Restart gateway` });
@@ -135,7 +134,9 @@ async function mainMenu() {
     process.exit(0);
   }
 
-  switch (action) {
+  const val = action as string;
+
+  switch (val) {
     case "start": return handleStart(config, msg);
     case "stop": return handleStop(msg);
     case "restart": return handleRestart(config, msg);
@@ -155,10 +156,10 @@ async function mainMenu() {
 
 // ── Handlers ──
 
-function launchGateway(config, msg) {
+function launchGateway(config: ClinkConfig, msg: Messages): void {
   p.outro(accent.bold(msg.startingGateway));
   console.log("");
-  const bot = startBot(config);
+  startBot(config);
   savePid(process.pid);
 
   process.on("SIGINT", () => {
@@ -169,11 +170,9 @@ function launchGateway(config, msg) {
     clearPid();
     process.exit(0);
   });
-
-  return bot;
 }
 
-async function handleStart(config, msg) {
+async function handleStart(config: ClinkConfig, msg: Messages): Promise<void> {
   if (!config.token) {
     p.log.error(msg.configureTokenFirst);
     return mainMenu();
@@ -189,7 +188,7 @@ async function handleStart(config, msg) {
   launchGateway(config, msg);
 }
 
-async function handleStop(msg) {
+async function handleStop(msg: Messages): Promise<void> {
   const { pid } = getGatewayStatus();
   if (pid) {
     try {
@@ -206,7 +205,7 @@ async function handleStop(msg) {
   return mainMenu();
 }
 
-async function handleRestart(config, msg) {
+async function handleRestart(config: ClinkConfig, msg: Messages): Promise<void> {
   const { pid } = getGatewayStatus();
   if (pid) {
     try { process.kill(pid, "SIGTERM"); } catch {}
@@ -220,7 +219,7 @@ async function handleRestart(config, msg) {
   launchGateway(config, msg);
 }
 
-async function handleStatus(config, msg) {
+async function handleStatus(config: ClinkConfig, msg: Messages): Promise<void> {
   const gw = getGatewayStatus();
   console.log("");
   if (gw.running) {
@@ -229,7 +228,7 @@ async function handleStatus(config, msg) {
     p.log.info(`${msg.gatewayDirectory}: ${chalk.blue(config.workingDir)}`);
     p.log.info(`${msg.gatewayPermissions}: ${config.skipPermissions ? msg.autonomous : msg.askApproval}`);
     p.log.info(`${msg.gatewayAllowed}: ${config.allowedUsers.length > 0 ? config.allowedUsers.join(", ") : msg.allUsers}`);
-    p.log.info(`Sessions: ${accent(listClaudeSessions(config.workingDir).length)}`);
+    p.log.info(`Sessions: ${accent(String(listClaudeSessions(config.workingDir).length))}`);
   } else {
     p.log.info(`Gateway ${chalk.red(msg.stopped)}`);
   }
@@ -242,26 +241,27 @@ async function handleStatus(config, msg) {
   return mainMenu();
 }
 
-async function handleToken(config, msg) {
+async function handleToken(config: ClinkConfig, msg: Messages): Promise<void> {
   const token = await p.text({
     message: msg.tokenPrompt,
     placeholder: msg.tokenPlaceholder,
     initialValue: config.token || "",
     validate: (v) => {
-      if (!v.trim()) return msg.tokenRequired;
+      if (!v || !v.trim()) return msg.tokenRequired;
       if (!v.includes(":")) return msg.tokenInvalid;
     },
   });
 
   if (p.isCancel(token)) return mainMenu();
 
-  config.token = token.trim();
+  const val = token as string;
+  config.token = val.trim();
   saveConfig(config);
   p.log.success(msg.tokenSaved);
   return mainMenu();
 }
 
-async function handleModel(config, msg) {
+async function handleModel(config: ClinkConfig, msg: Messages): Promise<void> {
   const model = await p.select({
     message: msg.modelPrompt,
     options: [
@@ -274,13 +274,14 @@ async function handleModel(config, msg) {
 
   if (p.isCancel(model)) return mainMenu();
 
-  config.model = model;
+  const val = model as string;
+  config.model = val as ClinkConfig["model"];
   saveConfig(config);
-  p.log.success(msg.modelChanged(accent(model)));
+  p.log.success(msg.modelChanged(accent(val)));
   return mainMenu();
 }
 
-async function handleWorkdir(config, msg) {
+async function handleWorkdir(config: ClinkConfig, msg: Messages): Promise<void> {
   const workdir = await p.text({
     message: msg.workdirPrompt,
     placeholder: homedir(),
@@ -289,7 +290,8 @@ async function handleWorkdir(config, msg) {
 
   if (p.isCancel(workdir)) return mainMenu();
 
-  const dir = workdir.replace(/^~/, homedir()).trim();
+  const val = workdir as string;
+  const dir = val.replace(/^~/, homedir()).trim();
   if (!existsSync(dir)) {
     p.log.error(msg.workdirNotFound(dir));
   } else {
@@ -300,7 +302,7 @@ async function handleWorkdir(config, msg) {
   return mainMenu();
 }
 
-async function handleUsers(config, msg) {
+async function handleUsers(config: ClinkConfig, msg: Messages): Promise<void> {
   if (config.allowedUsers.length > 0) {
     p.log.info(msg.currentUsers(chalk.white(config.allowedUsers.join(", "))));
   } else {
@@ -318,18 +320,23 @@ async function handleUsers(config, msg) {
     ],
   });
 
-  if (p.isCancel(action) || action === "back") return mainMenu();
+  if (p.isCancel(action)) return mainMenu();
 
-  if (action === "add") {
+  const val = action as string;
+
+  if (val === "back") return mainMenu();
+
+  if (val === "add") {
     const userId = await p.text({
       message: msg.userIdPrompt,
       placeholder: msg.userIdPlaceholder,
       validate: (v) => {
-        if (!v.trim() || isNaN(Number(v.trim()))) return msg.userIdInvalid;
+        if (!v || !v.trim() || isNaN(Number(v.trim()))) return msg.userIdInvalid;
       },
     });
     if (!p.isCancel(userId)) {
-      const id = Number(userId.trim());
+      const userVal = userId as string;
+      const id = Number(userVal.trim());
       if (!config.allowedUsers.includes(id)) {
         config.allowedUsers.push(id);
         saveConfig(config);
@@ -338,17 +345,18 @@ async function handleUsers(config, msg) {
         p.log.warn(msg.userAlreadyExists);
       }
     }
-  } else if (action === "remove" && config.allowedUsers.length > 0) {
-    const userId = await p.select({
+  } else if (val === "remove" && config.allowedUsers.length > 0) {
+    const removeWhich = await p.select({
       message: msg.removeWhich,
       options: config.allowedUsers.map((u) => ({ value: u, label: String(u) })),
     });
-    if (!p.isCancel(userId)) {
-      config.allowedUsers = config.allowedUsers.filter((u) => u !== userId);
+    if (!p.isCancel(removeWhich)) {
+      const removeVal = removeWhich as number;
+      config.allowedUsers = config.allowedUsers.filter((u) => u !== removeVal);
       saveConfig(config);
-      p.log.success(msg.userRemoved(userId));
+      p.log.success(msg.userRemoved(removeVal));
     }
-  } else if (action === "clear") {
+  } else if (val === "clear") {
     const confirm = await p.confirm({ message: msg.clearConfirm });
     if (!p.isCancel(confirm) && confirm) {
       config.allowedUsers = [];
@@ -360,7 +368,7 @@ async function handleUsers(config, msg) {
   return mainMenu();
 }
 
-async function handlePermissions(config, msg) {
+async function handlePermissions(config: ClinkConfig, msg: Messages): Promise<void> {
   p.log.message(
     config.skipPermissions
       ? chalk.yellow(msg.permCurrentAuto)
@@ -378,10 +386,11 @@ async function handlePermissions(config, msg) {
 
   if (p.isCancel(skip)) return mainMenu();
 
-  config.skipPermissions = skip;
+  const val = skip as boolean;
+  config.skipPermissions = val;
   saveConfig(config);
 
-  if (skip) {
+  if (val) {
     p.log.success(msg.permAutoEnabled);
     p.log.warn(dim(msg.permAutoNote));
   } else {
@@ -392,7 +401,7 @@ async function handlePermissions(config, msg) {
   return mainMenu();
 }
 
-async function handlePrompt(config, msg) {
+async function handlePrompt(config: ClinkConfig, msg: Messages): Promise<void> {
   const prompt = await p.text({
     message: msg.promptMessage,
     placeholder: msg.promptPlaceholder,
@@ -401,13 +410,14 @@ async function handlePrompt(config, msg) {
 
   if (p.isCancel(prompt)) return mainMenu();
 
-  config.systemPrompt = prompt.trim();
+  const val = prompt as string;
+  config.systemPrompt = val.trim();
   saveConfig(config);
   p.log.success(config.systemPrompt ? msg.promptSaved : msg.promptRemoved);
   return mainMenu();
 }
 
-async function handleLanguage(config, msg) {
+async function handleLanguage(config: ClinkConfig, msg: Messages): Promise<void> {
   const lang = await p.select({
     message: msg.languagePrompt,
     options: Object.entries(LANGUAGE_NAMES).map(([value, label]) => ({ value, label })),
@@ -416,17 +426,18 @@ async function handleLanguage(config, msg) {
 
   if (p.isCancel(lang)) return mainMenu();
 
-  config.language = lang;
+  const val = lang as SupportedLanguage;
+  config.language = val;
   saveConfig(config);
 
-  const newMsg = t(lang);
-  p.log.success(newMsg.languageChanged(LANGUAGE_NAMES[lang]));
+  const newMsg = t(val);
+  p.log.success(newMsg.languageChanged(LANGUAGE_NAMES[val]));
   return mainMenu();
 }
 
 // ── Help ──
 
-function showHelp() {
+function showHelp(): void {
   console.log("");
   console.log(chalk.bold("  Usage:") + "  clink <command>");
   console.log("");
@@ -459,11 +470,11 @@ function showHelp() {
 
 // ── Auto-update ──
 
-function getRepoDir() {
+function getRepoDir(): string {
   return new URL(".", import.meta.url).pathname.replace(/\/$/, "");
 }
 
-function updateFromMain() {
+function updateFromMain(): void {
   const repoDir = getRepoDir();
   console.log("");
   console.log(`  ${accent("●")} Updating clink from ${chalk.blue("main")}...`);
@@ -483,17 +494,22 @@ function updateFromMain() {
     console.log("");
     execSync("npm install", { cwd: repoDir, stdio: "inherit" });
     console.log("");
+    console.log(`  ${accent("●")} Building TypeScript...`);
+    console.log("");
+    execSync("npm run build", { cwd: repoDir, stdio: "inherit" });
+    console.log("");
     console.log(chalk.green("  ✓ clink updated successfully!"));
     console.log("");
-  } catch (err) {
-    console.error(chalk.red(`\n  ✗ Update failed: ${err.message}\n`));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(chalk.red(`\n  ✗ Update failed: ${message}\n`));
     process.exit(1);
   }
 }
 
 // ── Send handler ──
 
-async function resolveTargetChat(config, msg, explicitChatId) {
+async function resolveTargetChat(config: ClinkConfig, msg: Messages, explicitChatId: number | null): Promise<number | null> {
   if (explicitChatId) {
     return explicitChatId;
   }
@@ -509,10 +525,11 @@ async function resolveTargetChat(config, msg, explicitChatId) {
     options: config.allowedUsers.map((id) => ({ value: id, label: String(id) })),
   });
   if (p.isCancel(chosen)) return null;
-  return chosen;
+  const val = chosen as number;
+  return val;
 }
 
-async function handleSend(config, msg) {
+async function handleSend(config: ClinkConfig, msg: Messages): Promise<void> {
   if (!config.token) {
     p.log.error(msg.tokenNotConfigured + " " + accent("clink onboard") + " " + msg.toConfigure);
     process.exit(1);
@@ -521,7 +538,7 @@ async function handleSend(config, msg) {
   const args = process.argv.slice(3);
 
   // Parse --to (DM) or --to-group (group/channel) flag for custom chat ID
-  let explicitChatId = null;
+  let explicitChatId: number | null = null;
   const toIdx = args.indexOf("--to");
   const toGroupIdx = args.indexOf("--to-group");
 
@@ -576,8 +593,9 @@ async function handleSend(config, msg) {
     try {
       await sendFile(bot, chatId, resolvedPath, caption);
       s.stop(chalk.green(msg.sendSuccess));
-    } catch (err) {
-      s.stop(chalk.red(err.message));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      s.stop(chalk.red(message));
       process.exit(1);
     }
   } else if (args.length > 0) {
@@ -590,8 +608,9 @@ async function handleSend(config, msg) {
     try {
       await sendText(bot, chatId, text);
       s.stop(chalk.green(msg.sendSuccess));
-    } catch (err) {
-      s.stop(chalk.red(err.message));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      s.stop(chalk.red(message));
       process.exit(1);
     }
   } else {
@@ -606,48 +625,55 @@ async function handleSend(config, msg) {
 
     if (p.isCancel(action)) return;
 
-    if (action === "text") {
+    const actionVal = action as string;
+
+    if (actionVal === "text") {
       const text = await p.text({
         message: msg.sendText,
         placeholder: "...",
-        validate: (v) => { if (!v.trim()) return msg.sendText; },
+        validate: (v) => { if (!v || !v.trim()) return msg.sendText; },
       });
       if (p.isCancel(text)) return;
 
+      const textVal = text as string;
       const s = p.spinner();
       s.start(msg.sendSending);
       try {
-        await sendText(bot, chatId, text.trim());
+        await sendText(bot, chatId, textVal.trim());
         s.stop(chalk.green(msg.sendSuccess));
-      } catch (err) {
-        s.stop(chalk.red(err.message));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        s.stop(chalk.red(message));
       }
     } else {
       const filePath = await p.text({
         message: msg.sendFilePath,
         placeholder: msg.sendFilePathPlaceholder,
         validate: (v) => {
-          if (!v.trim()) return msg.sendFilePath;
+          if (!v || !v.trim()) return msg.sendFilePath;
           const resolved = v.trim().replace(/^~/, homedir());
           if (!existsSync(resolved)) return msg.sendFileNotFound(resolved);
         },
       });
       if (p.isCancel(filePath)) return;
 
+      const fileVal = filePath as string;
+
       const caption = await p.text({
         message: msg.sendCaption,
         placeholder: msg.sendCaptionPlaceholder,
       });
-      const captionText = p.isCancel(caption) ? undefined : (caption.trim() || undefined);
+      const captionText = p.isCancel(caption) ? undefined : ((caption as string).trim() || undefined);
 
-      const resolvedPath = filePath.trim().replace(/^~/, homedir());
+      const resolvedPath = fileVal.trim().replace(/^~/, homedir());
       const s = p.spinner();
       s.start(msg.sendSending);
       try {
         await sendFile(bot, chatId, resolvedPath, captionText);
         s.stop(chalk.green(msg.sendSuccess));
-      } catch (err) {
-        s.stop(chalk.red(err.message));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        s.stop(chalk.red(message));
       }
     }
   }
@@ -655,7 +681,7 @@ async function handleSend(config, msg) {
 
 // ── Entry ──
 
-async function main() {
+async function main(): Promise<void> {
   const arg = process.argv[2];
   const config = loadConfig();
   const msg = t(config.language);
@@ -669,7 +695,7 @@ async function main() {
       return;
 
     case "onboard":
-    case "setup":
+    case "setup": {
       console.clear();
       showBanner();
       console.log("");
@@ -680,6 +706,7 @@ async function main() {
       }
       mainMenu();
       return;
+    }
 
     case "send":
       await handleSend(config, msg);
@@ -704,7 +731,7 @@ async function main() {
     case "stop": {
       const gw = getGatewayStatus();
       if (gw.running) {
-        process.kill(gw.pid, "SIGTERM");
+        process.kill(gw.pid!, "SIGTERM");
         clearPid();
         console.log(chalk.green(`  Gateway stopped (pid ${gw.pid})`));
       } else {
@@ -716,7 +743,7 @@ async function main() {
     case "restart": {
       const gw = getGatewayStatus();
       if (gw.running) {
-        process.kill(gw.pid, "SIGTERM");
+        process.kill(gw.pid!, "SIGTERM");
         clearPid();
         console.log(dim(`  Stopped previous gateway (pid ${gw.pid})`));
         await new Promise((r) => setTimeout(r, 500));
@@ -739,7 +766,7 @@ async function main() {
         console.log(`  ${dim(msg.gatewayDirectory)}:    ${chalk.blue(config.workingDir)}`);
         console.log(`  ${dim(msg.gatewayPermissions)}:  ${config.skipPermissions ? msg.autonomous : msg.askApproval}`);
         console.log(`  ${dim(msg.gatewayAllowed)}:      ${config.allowedUsers.length > 0 ? config.allowedUsers.join(", ") : msg.allUsers}`);
-        console.log(`  ${dim("Sessions")}:      ${accent(listClaudeSessions(config.workingDir).length)}`);
+        console.log(`  ${dim("Sessions")}:      ${accent(String(listClaudeSessions(config.workingDir).length))}`);
       } else {
         console.log(`  ${chalk.red("○")} Gateway ${chalk.red(msg.stopped)}`);
       }
