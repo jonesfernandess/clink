@@ -19,7 +19,7 @@ const accent = chalk.hex("#FF5A2D");
 const dim = chalk.dim;
 const ccGradient = gradient(["#FF5A2D", "#FF8C42", "#FFD700"]);
 
-const PID_FILE = join(homedir(), ".config", "claudiogram", "gateway.pid");
+const PID_FILE = join(homedir(), ".config", "clink", "gateway.pid");
 
 // ── PID helpers ──
 
@@ -59,14 +59,14 @@ function getGatewayStatus() {
 // ── Banner ──
 
 function showBanner() {
-  const banner = figlet.textSync("CLAUDIOGRAM", {
+  const banner = figlet.textSync("CLINK", {
     font: "ANSI Shadow",
     horizontalLayout: "fitted",
   });
   console.log("");
   console.log(ccGradient(banner));
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
-  console.log(`  ${accent("●")} ${chalk.bold.white("CLAUDIOGRAM")}  ${dim("— Claude Code via Telegram")}`);
+  console.log(`  ${accent("●")} ${chalk.bold.white("CLINK")}  ${dim("— Claude Code via Telegram")}`);
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
 }
 
@@ -428,7 +428,7 @@ async function handleLanguage(config, msg) {
 
 function showHelp() {
   console.log("");
-  console.log(chalk.bold("  Usage:") + "  cgram <command>");
+  console.log(chalk.bold("  Usage:") + "  clink <command>");
   console.log("");
   console.log("  Commands:");
   console.log(`    ${accent("gateway")}     Start the gateway (foreground)`);
@@ -442,10 +442,10 @@ function showHelp() {
   console.log(`    ${accent("help")}        Show this help`);
   console.log("");
   console.log("  Send examples:");
-  console.log(`    cgram send "hello"              Send text`);
-  console.log(`    cgram send -f /path/file.png    Send a file`);
-  console.log(`    cgram send -f /path/f.pdf "lg"  File with caption`);
-  console.log(`    cgram send                      Interactive mode`);
+  console.log(`    clink send "hello"              Send text`);
+  console.log(`    clink send -f /path/file.png    Send a file`);
+  console.log(`    clink send -f /path/f.pdf "lg"  File with caption`);
+  console.log(`    clink send                      Interactive mode`);
   console.log("");
   console.log("  Run without arguments to open the interactive menu.");
   console.log("");
@@ -460,7 +460,7 @@ function getRepoDir() {
 function updateFromMain() {
   const repoDir = getRepoDir();
   console.log("");
-  console.log(`  ${accent("●")} Updating claudiogram from ${chalk.blue("main")}...`);
+  console.log(`  ${accent("●")} Updating clink from ${chalk.blue("main")}...`);
   console.log(dim(`  ${repoDir}`));
   console.log("");
 
@@ -477,7 +477,7 @@ function updateFromMain() {
     console.log("");
     execSync("npm install", { cwd: repoDir, stdio: "inherit" });
     console.log("");
-    console.log(chalk.green("  ✓ claudiogram updated successfully!"));
+    console.log(chalk.green("  ✓ clink updated successfully!"));
     console.log("");
   } catch (err) {
     console.error(chalk.red(`\n  ✗ Update failed: ${err.message}\n`));
@@ -505,7 +505,7 @@ async function resolveTargetChat(config, msg) {
 
 async function handleSend(config, msg) {
   if (!config.token) {
-    p.log.error(msg.tokenNotConfigured + " " + accent("cgram onboard") + " " + msg.toConfigure);
+    p.log.error(msg.tokenNotConfigured + " " + accent("clink onboard") + " " + msg.toConfigure);
     process.exit(1);
   }
 
@@ -515,7 +515,7 @@ async function handleSend(config, msg) {
 
   const bot = createBot(config.token);
 
-  // Parse args: cgram send -f /path "caption" OR cgram send "text"
+  // Parse args: clink send -f /path "caption" OR clink send "text"
   const fileIdx = args.indexOf("-f");
 
   if (fileIdx !== -1) {
@@ -658,8 +658,8 @@ async function main() {
     case "gateway":
     case "start":
       if (!config.token) {
-        p.intro(accent.bold(" claudiogram "));
-        p.log.error(msg.tokenNotConfigured + " " + accent("cgram onboard") + " " + msg.toConfigure);
+        p.intro(accent.bold(" clink "));
+        p.log.error(msg.tokenNotConfigured + " " + accent("clink onboard") + " " + msg.toConfigure);
         p.outro("");
         process.exit(1);
       }
@@ -687,7 +687,7 @@ async function main() {
         await new Promise((r) => setTimeout(r, 500));
       }
       if (!config.token) {
-        p.log.error(msg.tokenNotConfigured + " " + accent("cgram onboard") + " " + msg.toConfigure);
+        p.log.error(msg.tokenNotConfigured + " " + accent("clink onboard") + " " + msg.toConfigure);
         process.exit(1);
       }
       launchGateway(config, msg);

@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="CLAUDIOGRAM" width="600"/>
+  <img src="assets/logo.svg" alt="CLINK" width="600"/>
 </p>
 
 <p align="center">
   <strong>Use Claude Code from your phone via Telegram.</strong>
 </p>
 
-Claudiogram is a gateway that bridges [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and Telegram, allowing you to send prompts and receive responses directly from a Telegram chat. Run it on your machine and interact with Claude Code from anywhere — your phone, tablet, or any device with Telegram.
+Clink is a gateway that bridges [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and Telegram, allowing you to send prompts and receive responses directly from a Telegram chat. Run it on your machine and interact with Claude Code from anywhere — your phone, tablet, or any device with Telegram.
 
 ## How It Works
 
 ```
-You (Telegram) → Claudiogram Gateway → Claude Code CLI → Response → You (Telegram)
+You (Telegram) → Clink Gateway → Claude Code CLI → Response → You (Telegram)
 ```
 
 1. You send a message to your Telegram bot
@@ -40,13 +40,13 @@ You (Telegram) → Claudiogram Gateway → Claude Code CLI → Response → You 
 
 ```bash
 # Clone the repository
-git clone https://github.com/jonesfernandess/claudiogram.git
-cd claudiogram
+git clone https://github.com/jonesfernandess/clink.git
+cd clink
 
 # Install dependencies
 npm install
 
-# Install globally (optional — enables the cgram command)
+# Install globally (optional — enables the clink command)
 npm install -g .
 ```
 
@@ -56,7 +56,7 @@ Run the setup wizard:
 
 ```bash
 # If installed globally
-cgram onboard
+clink onboard
 
 # Or directly
 node cli.js onboard
@@ -75,7 +75,7 @@ The wizard will guide you through:
 ### Interactive Menu
 
 ```bash
-cgram
+clink
 ```
 
 Opens a menu where you can start/stop the gateway, change settings, manage users, and more.
@@ -83,24 +83,24 @@ Opens a menu where you can start/stop the gateway, change settings, manage users
 ### CLI Commands
 
 ```bash
-cgram gateway     # Start the gateway (foreground)
-cgram start       # Alias for gateway
-cgram stop        # Stop a running gateway
-cgram restart     # Restart the gateway
-cgram status      # Show gateway status
-cgram send        # Send a message or file to Telegram
-cgram onboard     # Run the setup wizard
-cgram update      # Update to latest version from main
-cgram help        # Show help
+clink gateway     # Start the gateway (foreground)
+clink start       # Alias for gateway
+clink stop        # Stop a running gateway
+clink restart     # Restart the gateway
+clink status      # Show gateway status
+clink send        # Send a message or file to Telegram
+clink onboard     # Run the setup wizard
+clink update      # Update to latest version from main
+clink help        # Show help
 ```
 
 ### Sending Messages & Files
 
 ```bash
-cgram send "hello world"             # Send text
-cgram send -f /path/to/file.png      # Send a file
-cgram send -f /path/to/doc.pdf "lg"  # File with caption
-cgram send                           # Interactive mode
+clink send "hello world"             # Send text
+clink send -f /path/to/file.png      # Send a file
+clink send -f /path/to/doc.pdf "lg"  # File with caption
+clink send                           # Interactive mode
 ```
 
 When the gateway is running, files created or modified by Claude (via Write/Edit tools) are automatically sent to your Telegram chat.
@@ -109,17 +109,17 @@ When the gateway is running, files created or modified by Claude (via Write/Edit
 
 ```bash
 # Configure and start in one go
-cgram onboard
+clink onboard
 
 # Or if already configured
-cgram start
+clink start
 ```
 
 Then open Telegram, find your bot, and start chatting with Claude Code.
 
 ## Configuration
 
-All settings are stored at `~/.config/claudiogram/config.json`.
+All settings are stored at `~/.config/clink/config.json`.
 
 | Setting | Description | Default |
 |---------|-------------|---------|

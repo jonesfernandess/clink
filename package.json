@@ -1,5 +1,5 @@
 {
-  "name": "claudiogram",
+  "name": "clink",
   "version": "1.0.0",
   "description": "Bridge between Claude Code and Telegram — use Claude Code from your phone",
   "main": "cli.js",
@@ -18,8 +18,7 @@
   "license": "ISC",
   "type": "module",
   "bin": {
-    "cgram": "./cli.js",
-    "claudiogram": "./cli.js"
+    "clink": "./cli.js"
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
