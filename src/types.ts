@@ -33,7 +33,7 @@ export interface ActiveSessionMap {
   [chatId: string]: string;
 }
 
-export interface ClaudeResult {
+export interface AgentResult {
   text: string;
   files: string[];
 }

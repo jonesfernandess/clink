@@ -10,7 +10,7 @@ import { sendFile, sendText } from "./send.js";
 import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
 import { fileURLToPath } from "url";
 import { getProvider } from "./types.js";
-import type { ClinkConfig, ClaudeResult, IntentClassification, PendingApproval, Messages } from "./types.js";
+import type { ClinkConfig, AgentResult, IntentClassification, PendingApproval, Messages } from "./types.js";
 
 const __dirname = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
@@ -328,7 +328,7 @@ CRITICAL RULES:
 
   // ── Call Claude Code CLI ──
 
-  function callClaude(prompt: string, chatId: number, skipPerms: boolean, extraSystemPrompt?: string | null): Promise<ClaudeResult> {
+  function callClaude(prompt: string, chatId: number, skipPerms: boolean, extraSystemPrompt?: string | null): Promise<AgentResult> {
     return new Promise((resolve, reject) => {
       const args: string[] = [
         "-p",
@@ -581,7 +581,7 @@ CRITICAL RULES:
 
   // ── Call Codex CLI ──
 
-  function callCodex(prompt: string, chatId: number, extraSystemPrompt?: string | null): Promise<ClaudeResult> {
+  function callCodex(prompt: string, chatId: number, extraSystemPrompt?: string | null): Promise<AgentResult> {
     return new Promise((resolve, reject) => {
       const fullPrompt = extraSystemPrompt
         ? `${corePrompt}\n\n${extraSystemPrompt}\n\nUser message: ${prompt}`
