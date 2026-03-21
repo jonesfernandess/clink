@@ -185,6 +185,12 @@ const messages = {
     gatewayWaiting: "Gateway listening for messages... (Ctrl+C to stop)",
     gatewayBlocked: (id, user) => `[BLOCKED] user ${id} (${user})`,
     noResponse: "(no response)",
+
+    // Audio transcription
+    audioTranscribing: "🎤 Transcribing audio...",
+    audioTranscription: "Transcription",
+    audioConversionFailed: "Failed to convert audio. Make sure ffmpeg is installed.",
+    audioTranscriptionFailed: "Failed to transcribe audio. Make sure faster-whisper is installed.",
   },
 
   pt: {
@@ -361,6 +367,12 @@ const messages = {
     gatewayWaiting: "Gateway escutando mensagens... (Ctrl+C para parar)",
     gatewayBlocked: (id, user) => `[BLOCKED] user ${id} (${user})`,
     noResponse: "(sem resposta)",
+
+    // Audio transcription
+    audioTranscribing: "🎤 Transcrevendo audio...",
+    audioTranscription: "Transcricao",
+    audioConversionFailed: "Falha ao converter audio. Certifique-se de que o ffmpeg esta instalado.",
+    audioTranscriptionFailed: "Falha ao transcrever audio. Certifique-se de que o faster-whisper esta instalado.",
   },
 
   es: {
@@ -537,6 +549,12 @@ const messages = {
     gatewayWaiting: "Gateway escuchando mensajes... (Ctrl+C para parar)",
     gatewayBlocked: (id, user) => `[BLOCKED] user ${id} (${user})`,
     noResponse: "(sin respuesta)",
+
+    // Audio transcription
+    audioTranscribing: "🎤 Transcribiendo audio...",
+    audioTranscription: "Transcripcion",
+    audioConversionFailed: "Error al convertir audio. Asegurate de que ffmpeg esta instalado.",
+    audioTranscriptionFailed: "Error al transcribir audio. Asegurate de que faster-whisper esta instalado.",
   },
 };
 
