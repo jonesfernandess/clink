@@ -181,22 +181,29 @@ Classification:`;
 
   // ── Resolve what a destructive operation will affect ──
 
-  function resolveDestructiveImpact(userText: string, chatId: number): Promise<string> {
+  interface DestructivePlan {
+    summary: string;   // shown to user in approval prompt
+    command: string;    // exact command to execute if approved
+  }
+
+  function resolveDestructiveImpact(userText: string, chatId: number): Promise<DestructivePlan> {
     return new Promise((resolve) => {
-      const resolvePrompt = `The user wants to perform a destructive operation. Your job is to figure out EXACTLY which files or folders will be affected and list them with their full absolute paths.
+      const resolvePrompt = `The user wants to perform a destructive operation. Your job is to:
+1. Figure out EXACTLY which files or folders will be affected (use Glob, Bash ls, etc.)
+2. Determine the EXACT shell command(s) needed to perform the operation
 
 User request: """${userText}"""
+Working directory: ${config.workingDir}
 
-INSTRUCTIONS:
-1. Use Glob, Read, or Bash (ls) tools to find the actual files/folders the user is referring to
-2. Respond with ONLY a confirmation message in this exact format — no extra text:
+Respond with ONLY this exact format — no extra text, no explanation:
 
+SUMMARY:
 🗑️ Confirm removal:
 - /absolute/path/to/file1
 - /absolute/path/to/file2
 
-If you cannot determine the exact paths, list what the user seems to want to delete based on context.
-Working directory: ${config.workingDir}`;
+COMMAND:
+rm /absolute/path/to/file1 /absolute/path/to/file2`;
 
       const proc = spawn("claude", [
         "-p", "--model", "haiku",
@@ -213,28 +220,39 @@ Working directory: ${config.workingDir}`;
 
       proc.stdout!.on("data", (d: Buffer) => output += d);
 
+      const fallback: DestructivePlan = { summary: `🗑️ ${userText}`, command: "" };
+
       proc.on("close", () => {
         if (settled) return;
         settled = true;
         const result = output.trim();
-        if (result && result.includes("/")) {
-          resolve(result);
+
+        const summaryMatch = result.match(/SUMMARY:\s*([\s\S]*?)(?=\nCOMMAND:)/i);
+        const commandMatch = result.match(/COMMAND:\s*([\s\S]*?)$/i);
+
+        if (summaryMatch && commandMatch) {
+          resolve({
+            summary: summaryMatch[1].trim(),
+            command: commandMatch[1].trim(),
+          });
+        } else if (result.includes("/")) {
+          resolve({ summary: result, command: "" });
         } else {
-          resolve(`🗑️ ${userText}`);
+          resolve(fallback);
         }
       });
 
       proc.on("error", () => {
         if (settled) return;
         settled = true;
-        resolve(`🗑️ ${userText}`);
+        resolve(fallback);
       });
 
       setTimeout(() => {
         if (settled) return;
         settled = true;
         try { proc.kill(); } catch {}
-        resolve(`🗑️ ${userText}`);
+        resolve(fallback);
       }, 15000);
     });
   }
@@ -749,13 +767,18 @@ CRITICAL RULES:
 
     if (isDestructive) {
       console.log(`[${new Date().toISOString()}] 🗑️  destructive operation detected — resolving targets...`);
-      const impactSummary = await resolveDestructiveImpact(text!, chatId);
-      const approved: boolean = await requestApproval(chatId, impactSummary);
+      const plan = await resolveDestructiveImpact(text!, chatId);
+      const approved: boolean = await requestApproval(chatId, plan.summary);
       if (!approved) {
         console.log(`[${new Date().toISOString()}] ❌ ${m.from?.username}: denied destructive operation`);
         return;
       }
       console.log(`[${new Date().toISOString()}] ✅ ${m.from?.username}: approved destructive operation`);
+      // Override the prompt with the pre-approved command so Sonnet executes exactly what was shown
+      if (plan.command) {
+        text = `Execute EXACTLY this command, nothing else: ${plan.command}`;
+        console.log(`[${new Date().toISOString()}] 🔒 using pre-approved command: ${plan.command}`);
+      }
       skipPerms = true;
     } else if (!skipPerms) {
       console.log(`[${new Date().toISOString()}] 🛡️  approval mode — classifying intent...`);
