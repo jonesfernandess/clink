@@ -247,7 +247,8 @@ CRITICAL RULES:
 3. If the user mentions a repo name, check if it exists in the current working directory first. If not, ASK — do not search.
 4. Prefer quick answers: git log, gh commands, simple checks. Not filesystem scans.
 5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.
-6. You have access to ALL Claude Code tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent, and more. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.`;
+6. You have access to ALL Claude Code tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent, and more. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.
+7. For questions about weather, news, current events, stock prices, or ANY real-time information: you MUST use WebSearch or WebFetch to look it up. NEVER say you don't have access to real-time data — you DO, via these tools. Use them.`;
 
       // Combine core + user system prompt + extra (e.g. file sending instructions)
       const sysPromptParts = [corePrompt, config.systemPrompt, extraSystemPrompt].filter(Boolean) as string[];
