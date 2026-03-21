@@ -8,6 +8,18 @@
 
 Clink is a gateway that bridges [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and Telegram, allowing you to send prompts and receive responses directly from a Telegram chat. Run it on your machine and interact with Claude Code from anywhere — your phone, tablet, or any device with Telegram.
 
+## Quick Start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jonesfernandess/clink/main/install.sh | bash
+```
+
+Then run the setup wizard:
+
+```bash
+clink onboard
+```
+
 ## How It Works
 
 ```
@@ -104,18 +116,6 @@ clink send                           # Interactive mode
 ```
 
 When the gateway is running, files created or modified by Claude (via Write/Edit tools) are automatically sent to your Telegram chat.
-
-### Quick Start
-
-```bash
-# Configure and start in one go
-clink onboard
-
-# Or if already configured
-clink start
-```
-
-Then open Telegram, find your bot, and start chatting with Claude Code.
 
 ## Configuration
 
