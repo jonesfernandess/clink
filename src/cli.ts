@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import figlet from "figlet";

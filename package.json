@@ -5,7 +5,7 @@
   "main": "dist/cli.js",
   "scripts": {
     "build": "tsc",
-    "postbuild": "node -e \"const fs=require('fs');const f='dist/cli.js';fs.writeFileSync(f,'#!/usr/bin/env node\\n'+fs.readFileSync(f,'utf8'))\" && chmod +x dist/cli.js",
+    "postbuild": "chmod +x dist/cli.js",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
