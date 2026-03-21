@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { existsSync } from "fs";
 import { loadConfig } from "./config.js";
 import { t } from "./i18n.js";
-import { sendFile } from "./send.js";
+import { sendFile, sendText } from "./send.js";
 import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
 
 export function startBot(configOverride) {
@@ -587,20 +587,47 @@ Classification:`;
       bot.sendChatAction(chatId, "typing").catch(() => {});
     }, 4000);
 
-    // Build extra system prompt for file sending when intent is send_file
+    // Build extra system prompt for file sending and cross-chat messaging
     let extraSysPrompt = null;
+    const tracked = chatFiles.get(chatId) || [];
+    const fileList = tracked.length > 0
+      ? tracked.map((f) => `  - ${f}`).join("\n")
+      : "  (no files tracked yet)";
+
+    const crossChatPrompt = `You are chatting via Telegram. You have the ability to send messages and files to OTHER Telegram chats (users, groups, channels).
+
+To send a message to another chat, include this tag in your response:
+[SEND_TO:<chat_id>:<message text>]
+
+To send a file to another chat, include this tag:
+[SEND_FILE_TO:<chat_id>:/absolute/path]
+
+To send a file to another chat with a caption:
+[SEND_FILE_TO:<chat_id>:/absolute/path:<caption>]
+
+Examples:
+- [SEND_TO:123456789:Hello! This is a message from the bot.]
+- [SEND_TO:-1001234567890:Report ready for review.]
+- [SEND_FILE_TO:123456789:/home/user/report.pdf]
+- [SEND_FILE_TO:-1001234567890:/home/user/image.png:Here is the chart]
+
+Rules:
+- Group/channel IDs are negative numbers (e.g. -1001234567890). User IDs are positive.
+- The user must provide the chat ID. If they don't know it, suggest they check the group/user info or forward a message from the target.
+- You can send multiple tags in one response.
+- Always confirm to the user what you sent and to whom.
+- These tags are invisible to the user — they are parsed and executed by the system.`;
+
     if (wantsFiles) {
-      const tracked = chatFiles.get(chatId) || [];
-      const fileList = tracked.length > 0
-        ? tracked.map((f) => `  - ${f}`).join("\n")
-        : "  (no files tracked yet)";
-      extraSysPrompt = `The user is chatting via Telegram and wants to receive files.
-You can send files by including [SEND_FILE:/absolute/path] tags in your response.
-Each tag sends that file to the user's Telegram chat. You can include multiple tags.
+      extraSysPrompt = `${crossChatPrompt}
+
+You can also send files to THIS chat by including [SEND_FILE:/absolute/path] tags in your response.
 Only use absolute paths. You can also use Read/Glob to find files if needed.
 
 Files created in this session:
 ${fileList}`;
+    } else {
+      extraSysPrompt = crossChatPrompt;
     }
 
     await withChatLock(chatId, async () => {
@@ -622,8 +649,25 @@ ${fileList}`;
         // Parse [SEND_FILE:/path] tags from Claude's response
         const sendFileTags = [...response.matchAll(/\[SEND_FILE:([^\]]+)\]/g)].map((m) => m[1].trim());
 
-        // Send the response text (strip the tags so user doesn't see them)
-        const cleanResponse = response.replace(/\[SEND_FILE:[^\]]+\]/g, "").trim();
+        // Parse [SEND_TO:<chatId>:<message>] tags for cross-chat messaging
+        const sendToTags = [...response.matchAll(/\[SEND_TO:(-?\d+):([^\]]+)\]/g)].map((m) => ({
+          targetChatId: Number(m[1]),
+          message: m[2].trim(),
+        }));
+
+        // Parse [SEND_FILE_TO:<chatId>:/path] and [SEND_FILE_TO:<chatId>:/path:<caption>] tags
+        const sendFileToTags = [...response.matchAll(/\[SEND_FILE_TO:(-?\d+):([^:\]]+)(?::([^\]]*))?\]/g)].map((m) => ({
+          targetChatId: Number(m[1]),
+          filePath: m[2].trim(),
+          caption: m[3]?.trim() || undefined,
+        }));
+
+        // Send the response text (strip all special tags so user doesn't see them)
+        const cleanResponse = response
+          .replace(/\[SEND_FILE:[^\]]+\]/g, "")
+          .replace(/\[SEND_TO:-?\d+:[^\]]+\]/g, "")
+          .replace(/\[SEND_FILE_TO:-?\d+:[^\]]+\]/g, "")
+          .trim();
         if (cleanResponse) {
           const parts = splitMessage(cleanResponse);
           for (const part of parts) {
@@ -633,7 +677,7 @@ ${fileList}`;
           }
         }
 
-        // Deliver files that Claude requested to send
+        // Deliver files that Claude requested to send (to current chat)
         for (const filePath of sendFileTags) {
           try {
             if (existsSync(filePath)) {
@@ -644,6 +688,33 @@ ${fileList}`;
             }
           } catch (fileErr) {
             console.error(`Failed to send file ${filePath}:`, fileErr.message);
+          }
+        }
+
+        // Deliver messages to other chats (cross-chat messaging)
+        for (const { targetChatId, message } of sendToTags) {
+          try {
+            await sendText(bot, targetChatId, message);
+            console.log(`[${new Date().toISOString()}] -> sent message to ${targetChatId}: "${message.slice(0, 60)}"`);
+          } catch (sendErr) {
+            console.error(`Failed to send to ${targetChatId}:`, sendErr.message);
+            await bot.sendMessage(chatId, `⚠️ ${msg.sendToFailed?.(targetChatId) || `Failed to send to ${targetChatId}: ${sendErr.message}`}`).catch(() => {});
+          }
+        }
+
+        // Deliver files to other chats (cross-chat file sending)
+        for (const { targetChatId, filePath, caption } of sendFileToTags) {
+          try {
+            if (existsSync(filePath)) {
+              await sendFile(bot, targetChatId, filePath, caption);
+              console.log(`[${new Date().toISOString()}] -> sent file to ${targetChatId}: ${filePath}`);
+            } else {
+              console.log(`[${new Date().toISOString()}] -> file not found for ${targetChatId}: ${filePath}`);
+              await bot.sendMessage(chatId, `⚠️ File not found: ${filePath}`).catch(() => {});
+            }
+          } catch (fileErr) {
+            console.error(`Failed to send file to ${targetChatId}:`, fileErr.message);
+            await bot.sendMessage(chatId, `⚠️ ${msg.sendToFailed?.(targetChatId) || `Failed to send file to ${targetChatId}: ${fileErr.message}`}`).catch(() => {});
           }
         }
 

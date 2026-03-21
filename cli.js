@@ -445,6 +445,8 @@ function showHelp() {
   console.log(`    clink send "hello"              Send text`);
   console.log(`    clink send -f /path/file.png    Send a file`);
   console.log(`    clink send -f /path/f.pdf "lg"  File with caption`);
+  console.log(`    clink send --to 123456 "hi"       Send to a specific user/DM`);
+  console.log(`    clink send --to-group 123 "hi"    Send to a group/channel`);
   console.log(`    clink send                      Interactive mode`);
   console.log("");
   console.log("  Run without arguments to open the interactive menu.");
@@ -487,7 +489,10 @@ function updateFromMain() {
 
 // ── Send handler ──
 
-async function resolveTargetChat(config, msg) {
+async function resolveTargetChat(config, msg, explicitChatId) {
+  if (explicitChatId) {
+    return explicitChatId;
+  }
   if (config.allowedUsers.length === 0) {
     p.log.error(msg.sendNoUsers);
     return null;
@@ -510,7 +515,33 @@ async function handleSend(config, msg) {
   }
 
   const args = process.argv.slice(3);
-  const chatId = await resolveTargetChat(config, msg);
+
+  // Parse --to (DM) or --to-group (group/channel) flag for custom chat ID
+  let explicitChatId = null;
+  const toIdx = args.indexOf("--to");
+  const toGroupIdx = args.indexOf("--to-group");
+
+  if (toGroupIdx !== -1) {
+    const raw = args[toGroupIdx + 1];
+    if (!raw || isNaN(Number(raw))) {
+      p.log.error(msg.sendInvalidChatId);
+      process.exit(1);
+    }
+    const numId = Number(raw);
+    // Group IDs in Telegram are negative; auto-prefix if user passes positive
+    explicitChatId = numId > 0 ? -numId : numId;
+    args.splice(toGroupIdx, 2);
+  } else if (toIdx !== -1) {
+    const raw = args[toIdx + 1];
+    if (!raw || isNaN(Number(raw))) {
+      p.log.error(msg.sendInvalidChatId);
+      process.exit(1);
+    }
+    explicitChatId = Number(raw);
+    args.splice(toIdx, 2);
+  }
+
+  const chatId = await resolveTargetChat(config, msg, explicitChatId);
   if (!chatId) return;
 
   const bot = createBot(config.token);

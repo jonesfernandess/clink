@@ -169,6 +169,8 @@ const messages = {
     sendChooseUser: "Send to which user?",
     sendFileNotFound: (f) => `File not found: ${f}`,
     sendSending: "Sending...",
+    sendInvalidChatId: "Invalid chat ID. Use --to <id> or --to-group <id> with a valid numeric ID.",
+    sendToFailed: (id) => `Failed to send to chat ${id}`,
 
     // Errors
     tokenNotConfigured: "Token not configured. Run",
@@ -345,6 +347,8 @@ const messages = {
     sendChooseUser: "Enviar para qual usuario?",
     sendFileNotFound: (f) => `Arquivo nao encontrado: ${f}`,
     sendSending: "Enviando...",
+    sendInvalidChatId: "Chat ID invalido. Use --to <id> ou --to-group <id> com um ID numerico valido.",
+    sendToFailed: (id) => `Falha ao enviar para o chat ${id}`,
 
     tokenNotConfigured: "Token nao configurado. Execute",
     toConfigure: "para configurar.",
@@ -519,6 +523,8 @@ const messages = {
     sendChooseUser: "Enviar a cual usuario?",
     sendFileNotFound: (f) => `Archivo no encontrado: ${f}`,
     sendSending: "Enviando...",
+    sendInvalidChatId: "Chat ID invalido. Usa --to <id> o --to-group <id> con un ID numerico valido.",
+    sendToFailed: (id) => `Error al enviar al chat ${id}`,
 
     tokenNotConfigured: "Token no configurado. Ejecuta",
     toConfigure: "para configurar.",
