@@ -105,7 +105,7 @@ const messages = {
     languageChanged: (l) => `Language changed to ${l}`,
 
     // Wizard
-    wizardWelcome: "Welcome! Let's set up CLAUDIOGRAM.",
+    wizardWelcome: "Welcome! Let's set up CLINK.",
     wizardChecking: "Checking prerequisites...",
     wizardClaudeFound: "Claude CLI found",
     wizardClaudeVersion: (v) => `version ${v}`,
@@ -289,7 +289,7 @@ const messages = {
     languagePrompt: "Idioma da interface",
     languageChanged: (l) => `Idioma alterado para ${l}`,
 
-    wizardWelcome: "Bem-vindo! Vamos configurar o CLAUDIOGRAM.",
+    wizardWelcome: "Bem-vindo! Vamos configurar o CLINK.",
     wizardChecking: "Verificando pre-requisitos...",
     wizardClaudeFound: "Claude CLI encontrado",
     wizardClaudeVersion: (v) => `versao ${v}`,
@@ -471,7 +471,7 @@ const messages = {
     languagePrompt: "Idioma de la interfaz",
     languageChanged: (l) => `Idioma cambiado a ${l}`,
 
-    wizardWelcome: "Bienvenido! Vamos a configurar CLAUDIOGRAM.",
+    wizardWelcome: "Bienvenido! Vamos a configurar CLINK.",
     wizardChecking: "Verificando prerequisitos...",
     wizardClaudeFound: "Claude CLI encontrado",
     wizardClaudeVersion: (v) => `version ${v}`,
