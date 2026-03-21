@@ -1058,6 +1058,12 @@ The current chat ID is: ${chatId}`;
 
     console.log(`[${new Date().toISOString()}] 📩 ${m.from?.username}: "${text}"`);
 
+    // Typing indicator — send immediately so user sees feedback
+    bot.sendChatAction(chatId, "typing").catch(() => {});
+    const typingInterval = setInterval(() => {
+      bot.sendChatAction(chatId, "typing").catch(() => {});
+    }, 4000);
+
     // ── Destructive operation guard — always confirm deletions ──
     const destructivePattern = /\b(rm\s|rm\b|remov|delet|apag|exclu|elimin|drop\s|drop\b|wipe|limpar|borrar|format)/i;
     const isDestructive = destructivePattern.test(text!);
@@ -1104,11 +1110,6 @@ The current chat ID is: ${chatId}`;
     } else {
       console.log(`[${new Date().toISOString()}] ⚡ autonomous mode — skipping classification`);
     }
-
-    bot.sendChatAction(chatId, "typing");
-    const typingInterval = setInterval(() => {
-      bot.sendChatAction(chatId, "typing").catch(() => {});
-    }, 4000);
 
     // Build extra system prompt for file sending and cross-chat messaging
     let extraSysPrompt: string | null = null;
