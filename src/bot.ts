@@ -601,7 +601,6 @@ CRITICAL RULES:
         "--json",
         "--dangerously-bypass-approvals-and-sandbox",
         "--skip-git-repo-check",
-        "--search",
         "-C", config.workingDir,
       );
 
