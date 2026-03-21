@@ -374,6 +374,85 @@ User request: """${userText}"""`;
     });
   }
 
+  // ── Resolve what an action will do (for approval preview) ──
+
+  interface ActionPlan {
+    summary: string;
+    command: string;
+  }
+
+  function resolveActionPlan(userText: string, chatId: number): Promise<ActionPlan> {
+    return new Promise((resolve) => {
+      const resolvePrompt = `DO NOT execute anything. The user wants to perform an action. Based on the conversation history, figure out:
+1. A short description of what will happen
+2. The EXACT shell command(s) or tool operations needed
+
+Respond with ONLY this format — no extra text:
+
+SUMMARY:
+📋 Action: <short description>
+⚡ <exact command>
+
+User request: """${userText}"""`;
+
+      const provider = getProvider(config.model);
+      const activeSessionId = getActiveSession(chatId);
+      let proc;
+
+      if (provider === "codex") {
+        const args = ["exec"];
+        if (activeSessionId) {
+          args.push("resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-m", "gpt-5.1-codex-mini", activeSessionId, resolvePrompt);
+        } else {
+          args.push("--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-C", config.workingDir, "-m", "gpt-5.1-codex-mini", resolvePrompt);
+        }
+        proc = spawn("codex", args, { env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
+      } else {
+        const args = ["-p", "--model", "haiku", "--dangerously-skip-permissions"];
+        if (activeSessionId) args.push("--resume", activeSessionId);
+        args.push(resolvePrompt);
+        proc = spawn("claude", args, { cwd: config.workingDir, env: { ...process.env, LANG: "en_US.UTF-8" }, stdio: ["ignore", "pipe", "pipe"] });
+      }
+
+      let output = "";
+      let settled = false;
+      proc.stdout!.on("data", (d: Buffer) => output += d);
+
+      const fallback: ActionPlan = { summary: userText, command: "" };
+
+      proc.on("close", () => {
+        if (settled) return;
+        settled = true;
+
+        let result = output.trim();
+        if (provider === "codex") {
+          for (const line of result.split("\n")) {
+            try {
+              const ev = JSON.parse(line) as Record<string, unknown>;
+              if (ev.type === "item.completed") {
+                const item = ev.item as Record<string, unknown>;
+                if (item.type === "agent_message" && item.text) result = item.text as string;
+              }
+            } catch {}
+          }
+        }
+
+        // Try to extract structured summary
+        const summaryMatch = result.match(/SUMMARY:\s*([\s\S]*?)$/i);
+        if (summaryMatch) {
+          resolve({ summary: summaryMatch[1].trim(), command: "" });
+        } else if (result.includes("⚡")) {
+          resolve({ summary: result, command: "" });
+        } else {
+          resolve(fallback);
+        }
+      });
+
+      proc.on("error", () => { if (!settled) { settled = true; resolve(fallback); } });
+      setTimeout(() => { if (!settled) { settled = true; try { proc.kill(); } catch {} resolve(fallback); } }, 15000);
+    });
+  }
+
   // ── Ask for approval via Telegram before running Claude ──
 
   function requestApproval(chatId: number, userText: string): Promise<boolean> {
@@ -1092,13 +1171,18 @@ The current chat ID is: ${chatId}`;
       const intent: IntentClassification = await classifyIntent(text!, chatId);
 
       if (intent === "action") {
-        console.log(`[${new Date().toISOString()}] 🔐 action detected — asking user for approval`);
-        const approved: boolean = await requestApproval(chatId, text!);
+        console.log(`[${new Date().toISOString()}] 🔐 action detected — resolving plan for approval...`);
+        const actionPlan = await resolveActionPlan(text!, chatId);
+        const approved: boolean = await requestApproval(chatId, actionPlan.summary);
         if (!approved) {
           console.log(`[${new Date().toISOString()}] ❌ ${m.from?.username}: denied → skipping`);
           return;
         }
         console.log(`[${new Date().toISOString()}] ✅ ${m.from?.username}: approved → running with --dangerously-skip-permissions`);
+        if (actionPlan.command) {
+          text = `Execute EXACTLY this command, nothing else: ${actionPlan.command}`;
+          console.log(`[${new Date().toISOString()}] 🔒 using pre-approved command: ${actionPlan.command}`);
+        }
         skipPerms = true;
       } else if (intent === "send_file") {
         console.log(`[${new Date().toISOString()}] 📎 send_file detected — will deliver files after response`);
