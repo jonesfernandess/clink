@@ -188,16 +188,16 @@ export async function runWizard(): Promise<"start" | "menu"> {
   } catch {}
 
   const modelOptions: Array<{ value: string; label: string; hint?: string }> = [
-    { value: "sonnet", label: "Sonnet", hint: `${msg.claudeSection} — ${msg.sonnetHint}` },
-    { value: "opus", label: "Opus", hint: `${msg.claudeSection} — ${msg.opusHint}` },
-    { value: "haiku", label: "Haiku", hint: `${msg.claudeSection} — ${msg.haikuHint}` },
-    { value: "gpt-5.4", label: "GPT-5.4", hint: hasCodex ? `${msg.codexSection} — ${msg.codexLatestHint}` : msg.codexNotFound },
-    { value: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: hasCodex ? `${msg.codexSection} — ${msg.codexMiniHint}` : msg.codexNotFound },
-    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex", hint: hasCodex ? `${msg.codexSection} — ${msg.codexCodingHint}` : msg.codexNotFound },
-    { value: "gpt-5.2-codex", label: "GPT-5.2 Codex", hint: hasCodex ? `${msg.codexSection} — ${msg.codexFrontierHint}` : msg.codexNotFound },
-    { value: "gpt-5.2", label: "GPT-5.2", hint: hasCodex ? `${msg.codexSection} — ${msg.codexProHint}` : msg.codexNotFound },
-    { value: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max", hint: hasCodex ? `${msg.codexSection} — ${msg.codexMaxHint}` : msg.codexNotFound },
-    { value: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini", hint: hasCodex ? `${msg.codexSection} — ${msg.codexLiteHint}` : msg.codexNotFound },
+    { value: "sonnet", label: "Sonnet", hint: `(claude-cli) ${msg.sonnetHint}` },
+    { value: "opus", label: "Opus", hint: `(claude-cli) ${msg.opusHint}` },
+    { value: "haiku", label: "Haiku", hint: `(claude-cli) ${msg.haikuHint}` },
+    { value: "gpt-5.4", label: "GPT-5.4", hint: hasCodex ? `(codex-cli) ${msg.codexLatestHint}` : msg.codexNotFound },
+    { value: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: hasCodex ? `(codex-cli) ${msg.codexMiniHint}` : msg.codexNotFound },
+    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex", hint: hasCodex ? `(codex-cli) ${msg.codexCodingHint}` : msg.codexNotFound },
+    { value: "gpt-5.2-codex", label: "GPT-5.2 Codex", hint: hasCodex ? `(codex-cli) ${msg.codexFrontierHint}` : msg.codexNotFound },
+    { value: "gpt-5.2", label: "GPT-5.2", hint: hasCodex ? `(codex-cli) ${msg.codexProHint}` : msg.codexNotFound },
+    { value: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max", hint: hasCodex ? `(codex-cli) ${msg.codexMaxHint}` : msg.codexNotFound },
+    { value: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini", hint: hasCodex ? `(codex-cli) ${msg.codexLiteHint}` : msg.codexNotFound },
   ];
 
   const model = await p.select({
