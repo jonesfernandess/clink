@@ -67,7 +67,7 @@ function showBanner(): void {
   console.log("");
   console.log(ccGradient(banner));
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
-  console.log(`  ${accent("●")} ${chalk.bold.white("CLINK")}  ${dim("— Claude Code via Telegram")}`);
+  console.log(`  ${accent("●")} ${chalk.bold.white("CLINK")}  ${dim("— Claude & Codex via Telegram")}`);
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
 }
 

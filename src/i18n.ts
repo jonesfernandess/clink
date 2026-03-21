@@ -2,7 +2,7 @@ import type { Messages, SupportedLanguage } from "./types.js";
 
 const messages: Record<SupportedLanguage, Messages> = {
   en: {
-    intro: "Claude Code on your phone via Telegram",
+    intro: "Claude & Codex on your phone via Telegram",
     token: "Token",
     model: "Model",
     directory: "Directory",
@@ -153,7 +153,7 @@ const messages: Record<SupportedLanguage, Messages> = {
     permDenied: "Denied!",
     permExpired: "Expired",
     permTimedOut: "Auto-denied (timeout — 2 min)",
-    permApprovalHint: "Allow Claude to use all tools for this request?",
+    permApprovalHint: "Allow the AI to use all tools for this request?",
     sendPrompt: "What do you want to send?",
     sendChooseAction: "Choose an action",
     sendTextOption: "Send text",
@@ -186,7 +186,7 @@ const messages: Record<SupportedLanguage, Messages> = {
     audioTranscriptionFailed: "Failed to transcribe audio. Make sure faster-whisper is installed.",
   },
   pt: {
-    intro: "Claude Code no seu celular via Telegram",
+    intro: "Claude & Codex no seu celular via Telegram",
     token: "Token",
     model: "Modelo",
     directory: "Diretorio",
@@ -337,7 +337,7 @@ const messages: Record<SupportedLanguage, Messages> = {
     permDenied: "Negado!",
     permExpired: "Expirado",
     permTimedOut: "Negado automaticamente (timeout — 2 min)",
-    permApprovalHint: "Permitir que o Claude use todas as ferramentas para este pedido?",
+    permApprovalHint: "Permitir que a IA use todas as ferramentas para este pedido?",
     sendPrompt: "O que voce quer enviar?",
     sendChooseAction: "Escolha uma acao",
     sendTextOption: "Enviar texto",
@@ -370,7 +370,7 @@ const messages: Record<SupportedLanguage, Messages> = {
     audioTranscriptionFailed: "Falha ao transcrever audio. Certifique-se de que o faster-whisper esta instalado.",
   },
   es: {
-    intro: "Claude Code en tu celular via Telegram",
+    intro: "Claude & Codex en tu celular via Telegram",
     token: "Token",
     model: "Modelo",
     directory: "Directorio",
@@ -521,7 +521,7 @@ const messages: Record<SupportedLanguage, Messages> = {
     permDenied: "Negado!",
     permExpired: "Expirado",
     permTimedOut: "Denegado automaticamente (timeout — 2 min)",
-    permApprovalHint: "Permitir que Claude use todas las herramientas para esta solicitud?",
+    permApprovalHint: "Permitir que la IA use todas las herramientas para esta solicitud?",
     sendPrompt: "Que quieres enviar?",
     sendChooseAction: "Elige una accion",
     sendTextOption: "Enviar texto",

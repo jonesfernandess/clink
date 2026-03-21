@@ -257,23 +257,50 @@ rm /absolute/path/to/file1 /absolute/path/to/file2
 User request: """${userText}"""`;
 
       // Use --resume to access the conversation history so references like "this file" resolve correctly
-      const args = [
-        "-p", "--model", "haiku",
-        "--dangerously-skip-permissions",
-      ];
-
+      const provider = getProvider(config.model);
       const activeSessionId = getActiveSession(chatId);
-      if (activeSessionId) {
-        args.push("--resume", activeSessionId);
+      let proc;
+
+      if (provider === "codex") {
+        const args = ["exec"];
+        if (activeSessionId) {
+          args.push("resume",
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-m", "gpt-5.1-codex-mini",
+            activeSessionId,
+            resolvePrompt,
+          );
+        } else {
+          args.push(
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-C", config.workingDir,
+            "-m", "gpt-5.1-codex-mini",
+            resolvePrompt,
+          );
+        }
+        proc = spawn("codex", args, {
+          env: { ...process.env },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } else {
+        const args = [
+          "-p", "--model", "haiku",
+          "--dangerously-skip-permissions",
+        ];
+        if (activeSessionId) {
+          args.push("--resume", activeSessionId);
+        }
+        args.push(resolvePrompt);
+        proc = spawn("claude", args, {
+          cwd: config.workingDir,
+          env: { ...process.env, LANG: "en_US.UTF-8" },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
       }
-
-      args.push(resolvePrompt);
-
-      const proc = spawn("claude", args, {
-        cwd: config.workingDir,
-        env: { ...process.env, LANG: "en_US.UTF-8" },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
 
       let output = "";
       let settled = false;
@@ -285,7 +312,22 @@ User request: """${userText}"""`;
       proc.on("close", () => {
         if (settled) return;
         settled = true;
-        const result = output.trim();
+
+        // Extract text — Codex returns JSONL, Claude returns plain text
+        let result = output.trim();
+        if (provider === "codex") {
+          for (const line of result.split("\n")) {
+            try {
+              const ev = JSON.parse(line) as Record<string, unknown>;
+              if (ev.type === "item.completed") {
+                const item = ev.item as Record<string, unknown>;
+                if (item.type === "agent_message" && item.text) {
+                  result = item.text as string;
+                }
+              }
+            } catch {}
+          }
+        }
 
         const summaryMatch = result.match(/SUMMARY:\s*([\s\S]*?)(?=\nCOMMAND:)/i);
         const commandMatch = result.match(/COMMAND:\s*([\s\S]*?)$/i);
@@ -374,7 +416,7 @@ CRITICAL RULES:
 3. If the user mentions a repo name, check if it exists in the current working directory first. If not, ASK — do not search.
 4. Prefer quick answers: git log, gh commands, simple checks. Not filesystem scans.
 5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.
-6. You have access to ALL Claude Code tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent, and more. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.
+6. You have access to ALL available tools. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.
 7. For questions about weather, news, current events, stock prices, or ANY real-time information: you MUST use WebSearch or WebFetch to look it up. NEVER say you don't have access to real-time data — you DO, via these tools. Use them.`;
 
   // ── Call Claude Code CLI ──
