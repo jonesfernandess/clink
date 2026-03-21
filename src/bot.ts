@@ -188,22 +188,11 @@ Classification:`;
 
   function resolveDestructiveImpact(userText: string, chatId: number): Promise<DestructivePlan> {
     return new Promise((resolve) => {
-      const recentFiles = chatFiles.get(chatId) || [];
-      const recentContext = recentFiles.length > 0
-        ? `\nFiles recently created/edited in this session:\n${recentFiles.map(f => `  - ${f}`).join("\n")}`
-        : "";
+      const resolvePrompt = `DO NOT execute anything. The user wants to perform a destructive operation. Based on the conversation history, figure out:
+1. EXACTLY which files or folders will be affected — resolve any references like "this file", "those files", "esse arquivo", "esses" to their actual absolute paths
+2. The EXACT shell command needed
 
-      const resolvePrompt = `The user wants to perform a destructive operation. Your job is to:
-1. Figure out EXACTLY which files or folders will be affected (use Glob, Bash ls, etc.)
-2. Determine the EXACT shell command(s) needed to perform the operation
-
-User request: """${userText}"""
-Working directory: ${config.workingDir}
-${recentContext}
-
-IMPORTANT: If the user says "this file", "that file", "esse arquivo", etc., they are referring to the most recently created/edited file listed above. Resolve the reference to the actual absolute path.
-
-Respond with ONLY this exact format — no extra text, no explanation:
+Respond with ONLY this format — no extra text:
 
 SUMMARY:
 🗑️ Confirm removal:
@@ -211,13 +200,24 @@ SUMMARY:
 - /absolute/path/to/file2
 
 COMMAND:
-rm /absolute/path/to/file1 /absolute/path/to/file2`;
+rm /absolute/path/to/file1 /absolute/path/to/file2
 
-      const proc = spawn("claude", [
+User request: """${userText}"""`;
+
+      // Use --resume to access the conversation history so references like "this file" resolve correctly
+      const args = [
         "-p", "--model", "haiku",
         "--dangerously-skip-permissions",
-        resolvePrompt,
-      ], {
+      ];
+
+      const activeSessionId = getActiveSession(chatId);
+      if (activeSessionId) {
+        args.push("--resume", activeSessionId);
+      }
+
+      args.push(resolvePrompt);
+
+      const proc = spawn("claude", args, {
         cwd: config.workingDir,
         env: { ...process.env, LANG: "en_US.UTF-8" },
         stdio: ["ignore", "pipe", "pipe"],
@@ -261,7 +261,7 @@ rm /absolute/path/to/file1 /absolute/path/to/file2`;
         settled = true;
         try { proc.kill(); } catch {}
         resolve(fallback);
-      }, 15000);
+      }, 20000);
     });
   }
 
