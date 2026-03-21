@@ -110,14 +110,28 @@ export function startBot(configOverride?: ClinkConfig): TelegramBot {
 
   function classifyIntent(userText: string, chatId: number): Promise<IntentClassification> {
     return new Promise((resolve) => {
-      const classifyPrompt = `Classify this message. Reply with a single word: CHAT, ACTION, or SEND_FILE.
+      const classifyPrompt = `Classify this user message into exactly ONE category. Reply with a single word only.
 
-CHAT = greetings, questions, conversation, explanations (no tools needed)
-ACTION = create/edit/delete files, run commands, install packages, git, system changes
-SEND_FILE = user wants to receive/send/download a file via chat. This includes:
-  - Explicit requests: "me manda o arquivo", "send me the file", "envia o PDF"
-  - File names or paths alone: "test.txt", "report.pdf", "main.py" (user wants that file)
-  - References to files: "o arquivo de ontem", "the config file", "aquele script"
+CHAT = any of these:
+  - Greetings, questions, conversation, explanations
+  - Reading/viewing/showing file contents ("show me", "mostre", "what's in", "read")
+  - Asking about something, confirming, answering questions
+  - Simple responses like "yes", "no", "ok", "isso", "that one"
+  - Anything that only requires READING, not modifying
+
+ACTION = any of these:
+  - Creating, editing, or writing files
+  - Running shell commands, installing packages
+  - Git operations, system changes
+  - Anything that MODIFIES the filesystem or system state
+
+SEND_FILE = user wants to RECEIVE a file attachment in the chat:
+  - "me manda o arquivo", "send me the file", "envia o PDF"
+  - "mande como anexo", "send as attachment"
+  - File names alone when context implies they want to receive it
+  - "o arquivo de ontem", "the config file", "aquele script"
+
+When in doubt between CHAT and ACTION, choose CHAT. Only use ACTION for operations that modify something.
 
 Message: """${userText}"""
 
