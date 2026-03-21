@@ -27,8 +27,8 @@ describe("i18n", () => {
 
   it("has all three languages in LANGUAGE_NAMES", () => {
     expect(LANGUAGE_NAMES.en).toBe("English");
-    expect(LANGUAGE_NAMES.pt).toBe("Portugues");
-    expect(LANGUAGE_NAMES.es).toBe("Espanol");
+    expect(LANGUAGE_NAMES.pt).toBe("Portuguese");
+    expect(LANGUAGE_NAMES.es).toBe("Spanish");
   });
 
   it("function properties work correctly", () => {

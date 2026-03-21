@@ -527,8 +527,8 @@ const messages: Record<SupportedLanguage, Messages> = {
 
 export const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
   en: "English",
-  pt: "Portugues",
-  es: "Espanol",
+  pt: "Portuguese",
+  es: "Spanish",
 };
 
 export function t(lang: string): Messages {
