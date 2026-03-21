@@ -6,7 +6,7 @@ from faster_whisper import WhisperModel
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: transcribe.py <audio_file>", file=sys.stderr)
+        print("Usage: transcribe.py <audio_file> [model_size]", file=sys.stderr)
         sys.exit(1)
 
     audio_path = sys.argv[1]

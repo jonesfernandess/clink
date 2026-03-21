@@ -624,10 +624,6 @@ Classification:`;
           return;
         }
         text = transcribed;
-        console.log(`[${new Date().toISOString()}] 🎤 transcribed: "${text.slice(0, 100)}"`);
-        await bot.sendMessage(chatId, `🎤 *${msg.audioTranscription || "Transcription"}:*\n${text}`, { parse_mode: "Markdown" }).catch(
-          () => bot.sendMessage(chatId, `🎤 ${msg.audioTranscription || "Transcription"}:\n${text}`)
-        );
       } catch (err) {
         console.error(`Audio processing failed: ${err.message}`);
         await bot.sendMessage(chatId, msg.audioTranscriptionFailed || "Failed to transcribe audio.").catch(() => {});
