@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-const CONFIG_DIR = join(homedir(), ".config", "claudiogram");
+const CONFIG_DIR = join(homedir(), ".config", "clink");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
 const DEFAULTS = {
