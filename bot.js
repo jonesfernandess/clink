@@ -1,11 +1,58 @@
 import TelegramBot from "node-telegram-bot-api";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import { randomUUID } from "crypto";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import { loadConfig } from "./config.js";
 import { t } from "./i18n.js";
 import { sendFile, sendText } from "./send.js";
 import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
+import { fileURLToPath } from "url";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+// ── Audio transcription via faster-whisper ──
+
+async function downloadTelegramFile(bot, fileId) {
+  const tmpDir = join(tmpdir(), "clink-audio");
+  mkdirSync(tmpDir, { recursive: true });
+  const filePath = await bot.downloadFile(fileId, tmpDir);
+  return filePath;
+}
+
+function transcribeAudio(audioPath, whisperModel = "base") {
+  const scriptPath = join(__dirname, "transcribe.py");
+  try {
+    const result = execSync(`python3 "${scriptPath}" "${audioPath}" "${whisperModel}"`, {
+      encoding: "utf-8",
+      timeout: 120_000,
+    });
+    return result.trim();
+  } catch (err) {
+    console.error(`Transcription failed: ${err.message}`);
+    return null;
+  }
+}
+
+function convertToWav(inputPath) {
+  const wavPath = inputPath.replace(/\.[^.]+$/, ".wav");
+  try {
+    execSync(`ffmpeg -y -i "${inputPath}" -ar 16000 -ac 1 -c:a pcm_s16le "${wavPath}" 2>/dev/null`, {
+      timeout: 30_000,
+    });
+    return wavPath;
+  } catch (err) {
+    console.error(`FFmpeg conversion failed: ${err.message}`);
+    return null;
+  }
+}
+
+function cleanupFiles(...paths) {
+  for (const p of paths) {
+    try { if (p && existsSync(p)) unlinkSync(p); } catch {}
+  }
+}
 
 export function startBot(configOverride) {
   const config = configOverride || loadConfig();
@@ -540,16 +587,50 @@ Classification:`;
   bot.on("message", async (m) => {
     const chatId = m.chat.id;
     const userId = m.from?.id;
-    const text = m.text;
+    let text = m.text;
 
-    if (!text) return;
+    const hasAudio = m.voice || m.audio;
+    if (!text && !hasAudio) return;
 
     // Skip commands — already handled by onText
-    if (text.startsWith("/")) return;
+    if (text && text.startsWith("/")) return;
 
     if (allowed.length > 0 && !allowed.includes(userId)) {
       console.log(msg.gatewayBlocked(userId, m.from?.username));
       return;
+    }
+
+    // ── Audio/voice transcription ──
+    if (hasAudio && !text) {
+      const fileId = m.voice?.file_id || m.audio?.file_id;
+      const duration = m.voice?.duration || m.audio?.duration || 0;
+      console.log(`[${new Date().toISOString()}] 🎤 ${m.from?.username}: voice/audio (${duration}s)`);
+
+      await bot.sendMessage(chatId, msg.audioTranscribing || "🎤 Transcribing audio...").catch(() => {});
+      bot.sendChatAction(chatId, "typing").catch(() => {});
+
+      let downloadedPath = null;
+      let wavPath = null;
+      try {
+        downloadedPath = await downloadTelegramFile(bot, fileId);
+        wavPath = convertToWav(downloadedPath);
+        if (!wavPath) {
+          await bot.sendMessage(chatId, msg.audioConversionFailed || "Failed to convert audio.");
+          return;
+        }
+        const transcribed = transcribeAudio(wavPath);
+        if (!transcribed) {
+          await bot.sendMessage(chatId, msg.audioTranscriptionFailed || "Failed to transcribe audio.");
+          return;
+        }
+        text = transcribed;
+      } catch (err) {
+        console.error(`Audio processing failed: ${err.message}`);
+        await bot.sendMessage(chatId, msg.audioTranscriptionFailed || "Failed to transcribe audio.").catch(() => {});
+        return;
+      } finally {
+        cleanupFiles(downloadedPath, wavPath);
+      }
     }
 
     console.log(`[${new Date().toISOString()}] 📩 ${m.from?.username}: "${text}"`);
