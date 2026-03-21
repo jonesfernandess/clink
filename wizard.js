@@ -50,6 +50,35 @@ export async function runWizard() {
   p.log.step(accent(msg.wizardWelcome));
   console.log("");
 
+  // Security disclaimer
+  p.log.warn(chalk.bold(msg.disclaimerTitle));
+  console.log("");
+  console.log(`  ${msg.disclaimerLine1}`);
+  console.log(`  ${msg.disclaimerLine2}`);
+  console.log(`  ${msg.disclaimerLine3}`);
+  console.log("");
+  console.log(dim(`  ${msg.disclaimerAsIs}`));
+  console.log(dim(`  ${msg.disclaimerLiability}`));
+  console.log(dim(`  ${msg.disclaimerResponsibility}`));
+  console.log("");
+  console.log(dim(`  ${msg.disclaimerRec}`));
+  console.log(dim(`  ${msg.disclaimerRec1}`));
+  console.log(dim(`  ${msg.disclaimerRec2}`));
+  console.log(dim(`  ${msg.disclaimerRec3}`));
+  console.log("");
+
+  const accepted = await p.confirm({
+    message: msg.disclaimerConfirm,
+    initialValue: false,
+  });
+
+  if (p.isCancel(accepted) || !accepted) {
+    p.outro(dim(msg.disclaimerCancelled));
+    process.exit(0);
+  }
+
+  console.log("");
+
   // Step 1: Check Claude CLI
   p.log.info(dim(msg.wizardChecking));
 
