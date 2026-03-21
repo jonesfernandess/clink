@@ -264,19 +264,40 @@ async function handleToken(config: ClinkConfig, msg: Messages): Promise<void> {
 }
 
 async function handleModel(config: ClinkConfig, msg: Messages): Promise<void> {
+  // Check if codex CLI is available
+  let hasCodex = false;
+  try {
+    execSync("which codex", { encoding: "utf-8", stdio: "pipe" });
+    hasCodex = true;
+  } catch {}
+
+  const options: Array<{ value: string; label: string; hint?: string }> = [
+    // Claude models
+    { value: "sonnet", label: "Sonnet", hint: `${msg.claudeSection} — ${msg.sonnetHint}` },
+    { value: "opus", label: "Opus", hint: `${msg.claudeSection} — ${msg.opusHint}` },
+    { value: "haiku", label: "Haiku", hint: `${msg.claudeSection} — ${msg.haikuHint}` },
+    // Codex models
+    { value: "gpt-5.4", label: "GPT-5.4", hint: hasCodex ? `${msg.codexSection} — ${msg.codexLatestHint}` : msg.codexNotFound },
+    { value: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: hasCodex ? `${msg.codexSection} — ${msg.codexMiniHint}` : msg.codexNotFound },
+    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex", hint: hasCodex ? `${msg.codexSection} — ${msg.codexCodingHint}` : msg.codexNotFound },
+  ];
+
   const model = await p.select({
     message: msg.modelPrompt,
-    options: [
-      { value: "sonnet", label: "Sonnet", hint: msg.sonnetHint },
-      { value: "opus", label: "Opus", hint: msg.opusHint },
-      { value: "haiku", label: "Haiku", hint: msg.haikuHint },
-    ],
+    options,
     initialValue: config.model || "sonnet",
   });
 
   if (p.isCancel(model)) return mainMenu();
 
   const val = model as string;
+
+  // Block selection if codex not installed
+  if (val.startsWith("gpt-") && !hasCodex) {
+    p.log.error(msg.codexNotFound + " — install: npm i -g @openai/codex");
+    return mainMenu();
+  }
+
   config.model = val as ClinkConfig["model"];
   saveConfig(config);
   p.log.success(msg.modelChanged(accent(val)));

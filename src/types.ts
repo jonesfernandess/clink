@@ -1,9 +1,18 @@
 export type SupportedLanguage = "en" | "pt" | "es";
 
+export type ClaudeModel = "sonnet" | "opus" | "haiku";
+export type CodexModel = "gpt-5.4" | "gpt-5.4-mini" | "gpt-5.3-codex" | "gpt-5.2-codex" | "gpt-5.2" | "gpt-5.1-codex-max" | "gpt-5.1-codex-mini";
+export type AIModel = ClaudeModel | CodexModel;
+export type Provider = "claude" | "codex";
+
+export function getProvider(model: string): Provider {
+  return model.startsWith("gpt-") ? "codex" : "claude";
+}
+
 export interface ClinkConfig {
   token: string;
   allowedUsers: number[];
-  model: "sonnet" | "opus" | "haiku";
+  model: AIModel;
   systemPrompt: string;
   workingDir: string;
   skipPermissions: boolean;
@@ -96,6 +105,12 @@ export interface Messages {
   sonnetHint: string;
   opusHint: string;
   haikuHint: string;
+  claudeSection: string;
+  codexSection: string;
+  codexNotFound: string;
+  codexLatestHint: string;
+  codexMiniHint: string;
+  codexCodingHint: string;
 
   // Workdir
   workdirPrompt: string;

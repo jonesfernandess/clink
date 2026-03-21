@@ -9,6 +9,7 @@ import { t } from "./i18n.js";
 import { sendFile, sendText } from "./send.js";
 import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
 import { fileURLToPath } from "url";
+import { getProvider } from "./types.js";
 import type { ClinkConfig, ClaudeResult, IntentClassification, PendingApproval, Messages } from "./types.js";
 
 const __dirname = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -312,6 +313,19 @@ User request: """${userText}"""`;
     });
   }
 
+  // ── Core system prompt (shared by Claude and Codex) ──
+
+  const corePrompt = `You are chatting via Telegram. Keep responses short and direct — this is a mobile chat, not a terminal.
+
+CRITICAL RULES:
+1. NEVER run "find" commands searching the entire filesystem. NEVER do global searches like "find / ..." or "find /Users ...". These are slow and wasteful.
+2. If you don't know where something is (a repo, a file, a project), ASK the user. Say something like "Where is the repo? Give me the path or the GitHub URL."
+3. If the user mentions a repo name, check if it exists in the current working directory first. If not, ASK — do not search.
+4. Prefer quick answers: git log, gh commands, simple checks. Not filesystem scans.
+5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.
+6. You have access to ALL Claude Code tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent, and more. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.
+7. For questions about weather, news, current events, stock prices, or ANY real-time information: you MUST use WebSearch or WebFetch to look it up. NEVER say you don't have access to real-time data — you DO, via these tools. Use them.`;
+
   // ── Call Claude Code CLI ──
 
   function callClaude(prompt: string, chatId: number, skipPerms: boolean, extraSystemPrompt?: string | null): Promise<ClaudeResult> {
@@ -324,18 +338,6 @@ User request: """${userText}"""`;
       ];
       if (skipPerms) args.push("--dangerously-skip-permissions");
       if (config.model) args.push("--model", config.model);
-
-      // Core behavior: clarify before acting on ambiguous requests
-      const corePrompt = `You are chatting via Telegram. Keep responses short and direct — this is a mobile chat, not a terminal.
-
-CRITICAL RULES:
-1. NEVER run "find" commands searching the entire filesystem. NEVER do global searches like "find / ..." or "find /Users ...". These are slow and wasteful.
-2. If you don't know where something is (a repo, a file, a project), ASK the user. Say something like "Where is the repo? Give me the path or the GitHub URL."
-3. If the user mentions a repo name, check if it exists in the current working directory first. If not, ASK — do not search.
-4. Prefer quick answers: git log, gh commands, simple checks. Not filesystem scans.
-5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.
-6. You have access to ALL Claude Code tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent, and more. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.
-7. For questions about weather, news, current events, stock prices, or ANY real-time information: you MUST use WebSearch or WebFetch to look it up. NEVER say you don't have access to real-time data — you DO, via these tools. Use them.`;
 
       // Combine core + user system prompt + extra (e.g. file sending instructions)
       const sysPromptParts = [corePrompt, config.systemPrompt, extraSystemPrompt].filter(Boolean) as string[];
@@ -566,6 +568,164 @@ CRITICAL RULES:
           resolve({ text: finalText, files: createdFiles });
         } else {
           reject(new Error(`claude exit ${code}: ${stderr}`));
+        }
+      });
+
+      proc.on("error", (err: Error) => {
+        if (settled) return;
+        cleanup();
+        reject(err);
+      });
+    });
+  }
+
+  // ── Call Codex CLI ──
+
+  function callCodex(prompt: string, chatId: number, extraSystemPrompt?: string | null): Promise<ClaudeResult> {
+    return new Promise((resolve, reject) => {
+      const fullPrompt = extraSystemPrompt
+        ? `${corePrompt}\n\n${extraSystemPrompt}\n\nUser message: ${prompt}`
+        : `${corePrompt}\n\nUser message: ${prompt}`;
+
+      const args: string[] = ["exec"];
+
+      // Session resume
+      const activeSessionId = getActiveSession(chatId);
+      if (activeSessionId) {
+        args.push("resume", activeSessionId, fullPrompt);
+      } else {
+        args.push(fullPrompt);
+      }
+
+      args.push(
+        "--json",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "--skip-git-repo-check",
+        "--search",
+        "-C", config.workingDir,
+      );
+
+      if (config.model) {
+        args.push("-m", config.model);
+      }
+
+      const proc = spawn("codex", args, {
+        env: { ...process.env },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let resultText = "";
+      const activities: string[] = [];
+      let threadId: string | null = null;
+      let lineBuf = "";
+      let stderr = "";
+      let settled = false;
+      let lastActivityCount = 0;
+
+      let idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
+
+      function resetIdle(): void {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
+      }
+
+      function killIdle(): void {
+        if (!settled) {
+          proc.kill("SIGTERM");
+          cleanup();
+          reject(new Error("codex timed out (no output for 3 min)"));
+        }
+      }
+
+      function handleCodexEvent(line: string): void {
+        if (!line.trim()) return;
+        try {
+          const ev = JSON.parse(line) as Record<string, unknown>;
+
+          if (ev.type === "thread.started") {
+            threadId = ev.thread_id as string;
+          }
+
+          if (ev.type === "item.completed") {
+            const item = ev.item as Record<string, unknown>;
+            if (item.type === "agent_message" && item.text) {
+              resultText = item.text as string;
+            } else if (item.type === "command_execution") {
+              const cmd = (item.command as string) || "";
+              // Extract the actual command from shell wrapper
+              const innerMatch = cmd.match(/"([^"]+)"/);
+              const displayCmd = innerMatch ? innerMatch[1] : cmd;
+              const shortCmd = displayCmd.length > 80 ? displayCmd.slice(0, 80) + "..." : displayCmd;
+              console.log(`[${new Date().toISOString()}] ⚡ codex: ${shortCmd}`);
+              activities.push(`⚡ ${shortCmd}`);
+              if (activities.length > 10) activities.splice(0, activities.length - 10);
+            }
+          }
+
+          if (ev.type === "item.started") {
+            const item = ev.item as Record<string, unknown>;
+            if (item.type === "command_execution") {
+              console.log(`[${new Date().toISOString()}] 🔧 codex running command...`);
+            }
+          }
+
+          if (ev.type === "turn.completed") {
+            const usage = ev.usage as Record<string, unknown> | undefined;
+            if (usage) {
+              console.log(`[${new Date().toISOString()}] 📊 tokens: ${usage.input_tokens}in/${usage.output_tokens}out`);
+            }
+          }
+        } catch {}
+      }
+
+      // Progress updates
+      const progressTimer = setInterval(async () => {
+        if (settled) return;
+        if (activities.length === lastActivityCount) return;
+        const newActs = activities.slice(lastActivityCount);
+        lastActivityCount = activities.length;
+        const log = newActs.join("\n");
+        if (log.trim()) {
+          try { await bot.sendMessage(chatId, log); } catch {}
+        }
+      }, PROGRESS_INTERVAL);
+
+      function cleanup(): void {
+        settled = true;
+        clearTimeout(idleTimer);
+        clearInterval(progressTimer);
+      }
+
+      proc.stdout!.on("data", (chunk: Buffer) => {
+        resetIdle();
+        lineBuf += chunk.toString();
+        const lines = lineBuf.split("\n");
+        lineBuf = lines.pop()!;
+        for (const line of lines) handleCodexEvent(line);
+      });
+
+      proc.stderr!.on("data", (d: Buffer) => {
+        stderr += d;
+        resetIdle();
+      });
+
+      proc.on("close", (code: number | null) => {
+        if (settled) return;
+        if (lineBuf.trim()) handleCodexEvent(lineBuf);
+        cleanup();
+
+        // Save Codex session for resume
+        if (threadId) {
+          setActiveSession(chatId, threadId);
+        }
+
+        if (code === 0 || resultText.trim()) {
+          const finalText = resultText.trim();
+          const preview = finalText.length > 500 ? finalText.slice(0, 500) + "..." : finalText;
+          console.log(`[${new Date().toISOString()}] 💬 response: ${preview}`);
+          resolve({ text: finalText, files: [] });
+        } else {
+          reject(new Error(`codex exit ${code}: ${stderr}`));
         }
       });
 
@@ -885,8 +1045,11 @@ ${fileList}`;
     }
 
     await withChatLock(chatId, async () => {
+      const provider = getProvider(config.model);
       try {
-        const { text: response, files } = await callClaude(text!, chatId, skipPerms, extraSysPrompt);
+        const { text: response, files } = provider === "codex"
+          ? await callCodex(text!, chatId, extraSysPrompt)
+          : await callClaude(text!, chatId, skipPerms, extraSysPrompt);
         clearInterval(typingInterval);
 
         if (wantsFiles) {
@@ -1004,7 +1167,9 @@ ${fileList}`;
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
           clearActiveSession(chatId);
           try {
-            const { text: retryResponse } = await callClaude(text!, chatId, skipPerms);
+            const { text: retryResponse } = provider === "codex"
+              ? await callCodex(text!, chatId)
+              : await callClaude(text!, chatId, skipPerms);
             if (retryResponse) {
               const parts = splitMessage(retryResponse);
               for (const part of parts) {

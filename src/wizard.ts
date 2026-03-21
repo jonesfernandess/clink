@@ -176,18 +176,29 @@ export async function runWizard(): Promise<"start" | "menu"> {
   console.log("");
 
   // Step 4: Model
-  p.log.step(accent(msg.wizardStep(3, 3)) + dim(" — Claude Model"));
+  p.log.step(accent(msg.wizardStep(3, 3)) + dim(" — AI Model"));
   console.log("");
   p.log.message(dim(msg.wizardModelIntro));
   console.log("");
 
+  let hasCodex = false;
+  try {
+    execSync("which codex", { encoding: "utf-8", stdio: "pipe" });
+    hasCodex = true;
+  } catch {}
+
+  const modelOptions: Array<{ value: string; label: string; hint?: string }> = [
+    { value: "sonnet", label: "Sonnet", hint: `${msg.claudeSection} — ${msg.sonnetHint}` },
+    { value: "opus", label: "Opus", hint: `${msg.claudeSection} — ${msg.opusHint}` },
+    { value: "haiku", label: "Haiku", hint: `${msg.claudeSection} — ${msg.haikuHint}` },
+    { value: "gpt-5.4", label: "GPT-5.4", hint: hasCodex ? `${msg.codexSection} — ${msg.codexLatestHint}` : msg.codexNotFound },
+    { value: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: hasCodex ? `${msg.codexSection} — ${msg.codexMiniHint}` : msg.codexNotFound },
+    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex", hint: hasCodex ? `${msg.codexSection} — ${msg.codexCodingHint}` : msg.codexNotFound },
+  ];
+
   const model = await p.select({
     message: msg.modelPrompt,
-    options: [
-      { value: "sonnet" as const, label: "Sonnet", hint: msg.sonnetHint },
-      { value: "opus" as const, label: "Opus", hint: msg.opusHint },
-      { value: "haiku" as const, label: "Haiku", hint: msg.haikuHint },
-    ],
+    options: modelOptions,
     initialValue: config.model || "sonnet",
   });
 
@@ -196,9 +207,18 @@ export async function runWizard(): Promise<"start" | "menu"> {
     process.exit(0);
   }
 
-  config.model = model as ClinkConfig["model"];
+  const modelVal = model as string;
+
+  // Block selection if codex not installed
+  if (modelVal.startsWith("gpt-") && !hasCodex) {
+    p.log.error(msg.codexNotFound + " — install: npm i -g @openai/codex");
+    p.outro("");
+    process.exit(1);
+  }
+
+  config.model = modelVal as ClinkConfig["model"];
   saveConfig(config);
-  p.log.success(msg.modelChanged(accent(model as string)));
+  p.log.success(msg.modelChanged(accent(modelVal)));
 
   console.log("");
   console.log(dim("  ─────────────────────────────────────────────────────────────"));

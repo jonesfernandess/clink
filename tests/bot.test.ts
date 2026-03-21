@@ -195,3 +195,91 @@ describe("destructive operation detection", () => {
     expect(isDestructive("edit the config")).toBe(false);
   });
 });
+
+describe("Codex JSONL event parsing", () => {
+  function parseCodexEvents(lines: string[]): { text: string; threadId: string | null; commands: string[] } {
+    let text = "";
+    let threadId: string | null = null;
+    const commands: string[] = [];
+
+    for (const line of lines) {
+      try {
+        const ev = JSON.parse(line) as Record<string, unknown>;
+        if (ev.type === "thread.started") threadId = ev.thread_id as string;
+        if (ev.type === "item.completed") {
+          const item = ev.item as Record<string, unknown>;
+          if (item.type === "agent_message" && item.text) text = item.text as string;
+          if (item.type === "command_execution" && item.command) commands.push(item.command as string);
+        }
+      } catch {}
+    }
+    return { text, threadId, commands };
+  }
+
+  it("parses thread.started event", () => {
+    const result = parseCodexEvents([
+      '{"type":"thread.started","thread_id":"019d1165-73ad-7431-a5fb-8936d9cd2fda"}',
+    ]);
+    expect(result.threadId).toBe("019d1165-73ad-7431-a5fb-8936d9cd2fda");
+  });
+
+  it("parses agent_message text", () => {
+    const result = parseCodexEvents([
+      '{"type":"thread.started","thread_id":"abc"}',
+      '{"type":"turn.started"}',
+      '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello"}}',
+      '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":5}}',
+    ]);
+    expect(result.text).toBe("hello");
+  });
+
+  it("parses command_execution events", () => {
+    const result = parseCodexEvents([
+      '{"type":"thread.started","thread_id":"abc"}',
+      '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Creating file..."}}',
+      '{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc \\"echo hello > /tmp/test.txt\\"","aggregated_output":"","exit_code":0,"status":"completed"}}',
+      '{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Done!"}}',
+    ]);
+    expect(result.text).toBe("Done!");
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0]).toContain("echo hello");
+  });
+
+  it("uses last agent_message as final text", () => {
+    const result = parseCodexEvents([
+      '{"type":"item.completed","item":{"type":"agent_message","text":"first"}}',
+      '{"type":"item.completed","item":{"type":"agent_message","text":"second"}}',
+    ]);
+    expect(result.text).toBe("second");
+  });
+
+  it("handles empty events gracefully", () => {
+    const result = parseCodexEvents([""]);
+    expect(result.text).toBe("");
+    expect(result.threadId).toBeNull();
+    expect(result.commands).toEqual([]);
+  });
+});
+
+describe("getProvider", () => {
+  // Import-free test of the provider logic
+  function getProvider(model: string): "claude" | "codex" {
+    return model.startsWith("gpt-") ? "codex" : "claude";
+  }
+
+  it("returns claude for Claude models", () => {
+    expect(getProvider("sonnet")).toBe("claude");
+    expect(getProvider("opus")).toBe("claude");
+    expect(getProvider("haiku")).toBe("claude");
+  });
+
+  it("returns codex for Codex models", () => {
+    expect(getProvider("gpt-5.4")).toBe("codex");
+    expect(getProvider("gpt-5.4-mini")).toBe("codex");
+    expect(getProvider("gpt-5.3-codex")).toBe("codex");
+    expect(getProvider("gpt-5.2-codex")).toBe("codex");
+    expect(getProvider("gpt-5.2")).toBe("codex");
+    expect(getProvider("gpt-5.1-codex-max")).toBe("codex");
+    expect(getProvider("gpt-5.1-codex-mini")).toBe("codex");
+  });
+});
