@@ -105,9 +105,10 @@ export function startBot(configOverride?: ClinkConfig): TelegramBot {
     return next;
   }
 
-  // ── Intent classifier — quick haiku call to decide if approval is needed ──
+  // ── Intent classifier — quick call to decide if approval is needed ──
+  // Uses Haiku for Claude provider, gpt-5.1-codex-mini for Codex provider
 
-  function classifyIntent(userText: string): Promise<IntentClassification> {
+  function classifyIntent(userText: string, chatId: number): Promise<IntentClassification> {
     return new Promise((resolve) => {
       const classifyPrompt = `Classify this message. Reply with a single word: CHAT, ACTION, or SEND_FILE.
 
@@ -122,15 +123,49 @@ Message: """${userText}"""
 
 Classification:`;
 
-      const proc = spawn("claude", [
-        "-p", "--model", "haiku",
-        "--dangerously-skip-permissions",
-        classifyPrompt,
-      ], {
-        cwd: config.workingDir,
-        env: { ...process.env, LANG: "en_US.UTF-8" },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const provider = getProvider(config.model);
+      let proc;
+
+      if (provider === "codex") {
+        // Use codex with the cheapest model, resuming session for context
+        const args = ["exec"];
+        const activeSessionId = getActiveSession(chatId);
+        if (activeSessionId) {
+          args.push("resume",
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-m", "gpt-5.1-codex-mini",
+            activeSessionId,
+            classifyPrompt,
+          );
+        } else {
+          args.push(
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-C", config.workingDir,
+            "-m", "gpt-5.1-codex-mini",
+            classifyPrompt,
+          );
+        }
+        proc = spawn("codex", args, {
+          env: { ...process.env },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } else {
+        proc = spawn("claude", [
+          "-p", "--model", "haiku",
+          "--dangerously-skip-permissions",
+          classifyPrompt,
+        ], {
+          cwd: config.workingDir,
+          env: { ...process.env, LANG: "en_US.UTF-8" },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      }
+
+      const classifierName = provider === "codex" ? "codex-mini" : "haiku";
 
       let output = "";
       let stderrOut = "";
@@ -138,7 +173,7 @@ Classification:`;
 
       const ts = (): string => `[${new Date().toISOString()}]`;
 
-      console.log(`${ts()} 🔍 classifier: starting haiku for "${userText.slice(0, 60)}"`);
+      console.log(`${ts()} 🔍 classifier: starting ${classifierName} for "${userText.slice(0, 60)}"`);
 
       proc.stdout!.on("data", (d: Buffer) => output += d);
       proc.stderr!.on("data", (d: Buffer) => stderrOut += d);
@@ -146,7 +181,23 @@ Classification:`;
       proc.on("close", (code: number | null) => {
         if (settled) return;
         settled = true;
-        const raw = output.trim();
+
+        // Extract text — Codex returns JSONL, Claude returns plain text
+        let raw = output.trim();
+        if (provider === "codex") {
+          // Parse JSONL to find the agent_message text
+          for (const line of raw.split("\n")) {
+            try {
+              const ev = JSON.parse(line) as Record<string, unknown>;
+              if (ev.type === "item.completed") {
+                const item = ev.item as Record<string, unknown>;
+                if (item.type === "agent_message" && item.text) {
+                  raw = item.text as string;
+                }
+              }
+            } catch {}
+          }
+        }
         const result = raw.toUpperCase();
 
         let intent: IntentClassification;
@@ -589,23 +640,26 @@ CRITICAL RULES:
 
       const args: string[] = ["exec"];
 
-      // Session resume
+      // Session resume — flags must come before positional args
       const activeSessionId = getActiveSession(chatId);
       if (activeSessionId) {
-        args.push("resume", activeSessionId, fullPrompt);
+        args.push("resume",
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+        );
+        if (config.model) args.push("-m", config.model);
+        args.push(activeSessionId, fullPrompt);
       } else {
+        args.push(
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+          "--search",
+          "-C", config.workingDir,
+        );
+        if (config.model) args.push("-m", config.model);
         args.push(fullPrompt);
-      }
-
-      args.push(
-        "--json",
-        "--dangerously-bypass-approvals-and-sandbox",
-        "--skip-git-repo-check",
-        "-C", config.workingDir,
-      );
-
-      if (config.model) {
-        args.push("-m", config.model);
       }
 
       const proc = spawn("codex", args, {
@@ -961,7 +1015,7 @@ CRITICAL RULES:
       skipPerms = true;
     } else if (!skipPerms) {
       console.log(`[${new Date().toISOString()}] 🛡️  approval mode — classifying intent...`);
-      const intent: IntentClassification = await classifyIntent(text!);
+      const intent: IntentClassification = await classifyIntent(text!, chatId);
 
       if (intent === "action") {
         console.log(`[${new Date().toISOString()}] 🔐 action detected — asking user for approval`);
