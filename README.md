@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  <strong>Use Claude Code from your phone via Telegram.</strong>
+  <strong>Claude & Codex Linked to Telegram</strong>
 </p>
 
-Clink is a gateway that bridges [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and Telegram, allowing you to send prompts and receive responses directly from a Telegram chat. Run it on your machine and interact with Claude Code from anywhere — your phone, tablet, or any device with Telegram.
+Clink is a gateway that bridges [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) and [OpenAI Codex CLI](https://github.com/openai/codex) with Telegram, allowing you to send prompts and receive responses directly from a Telegram chat. Run it on your machine and interact with Claude or Codex from anywhere — your phone, tablet, or any device with Telegram.
 
 ## Quick Start
 
@@ -33,12 +33,14 @@ You (Telegram) → Clink Gateway → Claude Code CLI → Response → You (Teleg
 
 ## Features
 
-- **Remote access to Claude Code** — interact with your local dev environment from anywhere
+- **Multi-provider** — use Claude (Sonnet, Opus, Haiku) or Codex (GPT-5.4, GPT-5.3 Codex, etc.) from the same interface
+- **Remote access** — interact with your local dev environment from anywhere
 - **User allowlist** — restrict access to specific Telegram user IDs
-- **Model selection** — choose between Sonnet, Opus, and Haiku
-- **Custom working directory** — point Claude to any project on your machine
+- **Model selection** — choose any Claude or Codex model, grouped by provider
+- **Custom working directory** — point the agent to any project on your machine
 - **System prompt** — add custom instructions to every request
 - **Autonomous mode** — skip permission prompts for seamless mobile use
+- **Destructive operation guard** — always confirms file deletions with exact paths and commands
 - **Multi-language** — English, Portuguese, and Spanish
 - **Interactive CLI** — setup wizard and menu for easy configuration
 
@@ -46,6 +48,7 @@ You (Telegram) → Clink Gateway → Claude Code CLI → Response → You (Teleg
 
 - **Node.js** >= 18
 - **Claude Code CLI** installed and authenticated (`npm install -g @anthropic-ai/claude-code`)
+- **Codex CLI** *(optional)* — for Codex models (`npm install -g @openai/codex`)
 - **Telegram bot token** from [@BotFather](https://t.me/BotFather)
 
 ## Installation

@@ -67,7 +67,7 @@ function showBanner(): void {
   console.log("");
   console.log(ccGradient(banner));
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
-  console.log(`  ${accent("●")} ${chalk.bold.white("CLINK")}  ${dim("— Claude Code via Telegram")}`);
+  console.log(`  ${accent("●")} ${chalk.bold.white("CLINK")}  ${dim("— Claude & Codex via Telegram")}`);
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
 }
 
@@ -264,19 +264,44 @@ async function handleToken(config: ClinkConfig, msg: Messages): Promise<void> {
 }
 
 async function handleModel(config: ClinkConfig, msg: Messages): Promise<void> {
+  // Check if codex CLI is available
+  let hasCodex = false;
+  try {
+    execSync("which codex", { encoding: "utf-8", stdio: "pipe" });
+    hasCodex = true;
+  } catch {}
+
+  const options: Array<{ value: string; label: string; hint?: string }> = [
+    // Claude models
+    { value: "sonnet", label: "Sonnet", hint: `Claude Code CLI — ${msg.sonnetHint}` },
+    { value: "opus", label: "Opus", hint: `Claude Code CLI — ${msg.opusHint}` },
+    { value: "haiku", label: "Haiku", hint: `Claude Code CLI — ${msg.haikuHint}` },
+    // Codex models
+    { value: "gpt-5.4", label: "GPT-5.4", hint: hasCodex ? `Codex CLI — ${msg.codexLatestHint}` : msg.codexNotFound },
+    { value: "gpt-5.4-mini", label: "GPT-5.4 Mini", hint: hasCodex ? `Codex CLI — ${msg.codexMiniHint}` : msg.codexNotFound },
+    { value: "gpt-5.3-codex", label: "GPT-5.3 Codex", hint: hasCodex ? `Codex CLI — ${msg.codexCodingHint}` : msg.codexNotFound },
+    { value: "gpt-5.2-codex", label: "GPT-5.2 Codex", hint: hasCodex ? `Codex CLI — ${msg.codexFrontierHint}` : msg.codexNotFound },
+    { value: "gpt-5.2", label: "GPT-5.2", hint: hasCodex ? `Codex CLI — ${msg.codexProHint}` : msg.codexNotFound },
+    { value: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max", hint: hasCodex ? `Codex CLI — ${msg.codexMaxHint}` : msg.codexNotFound },
+    { value: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini", hint: hasCodex ? `Codex CLI — ${msg.codexLiteHint}` : msg.codexNotFound },
+  ];
+
   const model = await p.select({
     message: msg.modelPrompt,
-    options: [
-      { value: "sonnet", label: "Sonnet", hint: msg.sonnetHint },
-      { value: "opus", label: "Opus", hint: msg.opusHint },
-      { value: "haiku", label: "Haiku", hint: msg.haikuHint },
-    ],
+    options,
     initialValue: config.model || "sonnet",
   });
 
   if (p.isCancel(model)) return mainMenu();
 
   const val = model as string;
+
+  // Block selection if codex not installed
+  if (val.startsWith("gpt-") && !hasCodex) {
+    p.log.error(msg.codexNotFound + " — install: npm i -g @openai/codex");
+    return mainMenu();
+  }
+
   config.model = val as ClinkConfig["model"];
   saveConfig(config);
   p.log.success(msg.modelChanged(accent(val)));

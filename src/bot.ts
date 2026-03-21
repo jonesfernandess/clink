@@ -9,7 +9,8 @@ import { t } from "./i18n.js";
 import { sendFile, sendText } from "./send.js";
 import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
 import { fileURLToPath } from "url";
-import type { ClinkConfig, ClaudeResult, IntentClassification, PendingApproval, Messages } from "./types.js";
+import { getProvider } from "./types.js";
+import type { ClinkConfig, AgentResult, IntentClassification, PendingApproval, Messages } from "./types.js";
 
 const __dirname = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
@@ -104,32 +105,81 @@ export function startBot(configOverride?: ClinkConfig): TelegramBot {
     return next;
   }
 
-  // ── Intent classifier — quick haiku call to decide if approval is needed ──
+  // ── Intent classifier — quick call to decide if approval is needed ──
+  // Uses Haiku for Claude provider, gpt-5.1-codex-mini for Codex provider
 
-  function classifyIntent(userText: string): Promise<IntentClassification> {
+  function classifyIntent(userText: string, chatId: number): Promise<IntentClassification> {
     return new Promise((resolve) => {
-      const classifyPrompt = `Classify this message. Reply with a single word: CHAT, ACTION, or SEND_FILE.
+      const classifyPrompt = `Classify this user message into exactly ONE category. Reply with a single word only.
 
-CHAT = greetings, questions, conversation, explanations (no tools needed)
-ACTION = create/edit/delete files, run commands, install packages, git, system changes
-SEND_FILE = user wants to receive/send/download a file via chat. This includes:
-  - Explicit requests: "me manda o arquivo", "send me the file", "envia o PDF"
-  - File names or paths alone: "test.txt", "report.pdf", "main.py" (user wants that file)
-  - References to files: "o arquivo de ontem", "the config file", "aquele script"
+CHAT = any of these:
+  - Greetings, questions, conversation, explanations
+  - Reading/viewing/showing file contents ("show me", "mostre", "what's in", "read")
+  - Asking about something, confirming, answering questions
+  - Simple responses like "yes", "no", "ok", "isso", "that one"
+  - Anything that only requires READING, not modifying
+
+ACTION = any of these:
+  - Creating, editing, or writing files
+  - Running shell commands, installing packages
+  - Git operations, system changes
+  - Anything that MODIFIES the filesystem or system state
+
+SEND_FILE = user wants to RECEIVE a file attachment in the chat:
+  - "me manda o arquivo", "send me the file", "envia o PDF"
+  - "mande como anexo", "send as attachment"
+  - File names alone when context implies they want to receive it
+  - "o arquivo de ontem", "the config file", "aquele script"
+
+When in doubt between CHAT and ACTION, choose CHAT. Only use ACTION for operations that modify something.
 
 Message: """${userText}"""
 
 Classification:`;
 
-      const proc = spawn("claude", [
-        "-p", "--model", "haiku",
-        "--dangerously-skip-permissions",
-        classifyPrompt,
-      ], {
-        cwd: config.workingDir,
-        env: { ...process.env, LANG: "en_US.UTF-8" },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const provider = getProvider(config.model);
+      let proc;
+
+      if (provider === "codex") {
+        // Use codex with the cheapest model, resuming session for context
+        const args = ["exec"];
+        const activeSessionId = getActiveSession(chatId);
+        if (activeSessionId) {
+          args.push("resume",
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-m", "gpt-5.1-codex-mini",
+            activeSessionId,
+            classifyPrompt,
+          );
+        } else {
+          args.push(
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-C", config.workingDir,
+            "-m", "gpt-5.1-codex-mini",
+            classifyPrompt,
+          );
+        }
+        proc = spawn("codex", args, {
+          env: { ...process.env },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } else {
+        proc = spawn("claude", [
+          "-p", "--model", "haiku",
+          "--dangerously-skip-permissions",
+          classifyPrompt,
+        ], {
+          cwd: config.workingDir,
+          env: { ...process.env, LANG: "en_US.UTF-8" },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      }
+
+      const classifierName = provider === "codex" ? "codex-mini" : "haiku";
 
       let output = "";
       let stderrOut = "";
@@ -137,7 +187,7 @@ Classification:`;
 
       const ts = (): string => `[${new Date().toISOString()}]`;
 
-      console.log(`${ts()} 🔍 classifier: starting haiku for "${userText.slice(0, 60)}"`);
+      console.log(`${ts()} 🔍 classifier: starting ${classifierName} for "${userText.slice(0, 60)}"`);
 
       proc.stdout!.on("data", (d: Buffer) => output += d);
       proc.stderr!.on("data", (d: Buffer) => stderrOut += d);
@@ -145,7 +195,23 @@ Classification:`;
       proc.on("close", (code: number | null) => {
         if (settled) return;
         settled = true;
-        const raw = output.trim();
+
+        // Extract text — Codex returns JSONL, Claude returns plain text
+        let raw = output.trim();
+        if (provider === "codex") {
+          // Parse JSONL to find the agent_message text
+          for (const line of raw.split("\n")) {
+            try {
+              const ev = JSON.parse(line) as Record<string, unknown>;
+              if (ev.type === "item.completed") {
+                const item = ev.item as Record<string, unknown>;
+                if (item.type === "agent_message" && item.text) {
+                  raw = item.text as string;
+                }
+              }
+            } catch {}
+          }
+        }
         const result = raw.toUpperCase();
 
         let intent: IntentClassification;
@@ -205,23 +271,50 @@ rm /absolute/path/to/file1 /absolute/path/to/file2
 User request: """${userText}"""`;
 
       // Use --resume to access the conversation history so references like "this file" resolve correctly
-      const args = [
-        "-p", "--model", "haiku",
-        "--dangerously-skip-permissions",
-      ];
-
+      const provider = getProvider(config.model);
       const activeSessionId = getActiveSession(chatId);
-      if (activeSessionId) {
-        args.push("--resume", activeSessionId);
+      let proc;
+
+      if (provider === "codex") {
+        const args = ["exec"];
+        if (activeSessionId) {
+          args.push("resume",
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-m", "gpt-5.1-codex-mini",
+            activeSessionId,
+            resolvePrompt,
+          );
+        } else {
+          args.push(
+            "--json",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--skip-git-repo-check",
+            "-C", config.workingDir,
+            "-m", "gpt-5.1-codex-mini",
+            resolvePrompt,
+          );
+        }
+        proc = spawn("codex", args, {
+          env: { ...process.env },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } else {
+        const args = [
+          "-p", "--model", "haiku",
+          "--dangerously-skip-permissions",
+        ];
+        if (activeSessionId) {
+          args.push("--resume", activeSessionId);
+        }
+        args.push(resolvePrompt);
+        proc = spawn("claude", args, {
+          cwd: config.workingDir,
+          env: { ...process.env, LANG: "en_US.UTF-8" },
+          stdio: ["ignore", "pipe", "pipe"],
+        });
       }
-
-      args.push(resolvePrompt);
-
-      const proc = spawn("claude", args, {
-        cwd: config.workingDir,
-        env: { ...process.env, LANG: "en_US.UTF-8" },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
 
       let output = "";
       let settled = false;
@@ -233,7 +326,22 @@ User request: """${userText}"""`;
       proc.on("close", () => {
         if (settled) return;
         settled = true;
-        const result = output.trim();
+
+        // Extract text — Codex returns JSONL, Claude returns plain text
+        let result = output.trim();
+        if (provider === "codex") {
+          for (const line of result.split("\n")) {
+            try {
+              const ev = JSON.parse(line) as Record<string, unknown>;
+              if (ev.type === "item.completed") {
+                const item = ev.item as Record<string, unknown>;
+                if (item.type === "agent_message" && item.text) {
+                  result = item.text as string;
+                }
+              }
+            } catch {}
+          }
+        }
 
         const summaryMatch = result.match(/SUMMARY:\s*([\s\S]*?)(?=\nCOMMAND:)/i);
         const commandMatch = result.match(/COMMAND:\s*([\s\S]*?)$/i);
@@ -263,6 +371,85 @@ User request: """${userText}"""`;
         try { proc.kill(); } catch {}
         resolve(fallback);
       }, 20000);
+    });
+  }
+
+  // ── Resolve what an action will do (for approval preview) ──
+
+  interface ActionPlan {
+    summary: string;
+    command: string;
+  }
+
+  function resolveActionPlan(userText: string, chatId: number): Promise<ActionPlan> {
+    return new Promise((resolve) => {
+      const resolvePrompt = `DO NOT execute anything. The user wants to perform an action. Based on the conversation history, figure out:
+1. A short description of what will happen
+2. The EXACT shell command(s) or tool operations needed
+
+Respond with ONLY this format — no extra text:
+
+SUMMARY:
+📋 Action: <short description>
+⚡ <exact command>
+
+User request: """${userText}"""`;
+
+      const provider = getProvider(config.model);
+      const activeSessionId = getActiveSession(chatId);
+      let proc;
+
+      if (provider === "codex") {
+        const args = ["exec"];
+        if (activeSessionId) {
+          args.push("resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-m", "gpt-5.1-codex-mini", activeSessionId, resolvePrompt);
+        } else {
+          args.push("--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-C", config.workingDir, "-m", "gpt-5.1-codex-mini", resolvePrompt);
+        }
+        proc = spawn("codex", args, { env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
+      } else {
+        const args = ["-p", "--model", "haiku", "--dangerously-skip-permissions"];
+        if (activeSessionId) args.push("--resume", activeSessionId);
+        args.push(resolvePrompt);
+        proc = spawn("claude", args, { cwd: config.workingDir, env: { ...process.env, LANG: "en_US.UTF-8" }, stdio: ["ignore", "pipe", "pipe"] });
+      }
+
+      let output = "";
+      let settled = false;
+      proc.stdout!.on("data", (d: Buffer) => output += d);
+
+      const fallback: ActionPlan = { summary: userText, command: "" };
+
+      proc.on("close", () => {
+        if (settled) return;
+        settled = true;
+
+        let result = output.trim();
+        if (provider === "codex") {
+          for (const line of result.split("\n")) {
+            try {
+              const ev = JSON.parse(line) as Record<string, unknown>;
+              if (ev.type === "item.completed") {
+                const item = ev.item as Record<string, unknown>;
+                if (item.type === "agent_message" && item.text) result = item.text as string;
+              }
+            } catch {}
+          }
+        }
+
+        // Try to extract structured summary
+        const summaryMatch = result.match(/SUMMARY:\s*([\s\S]*?)$/i);
+        if (summaryMatch) {
+          resolve({ summary: summaryMatch[1].trim(), command: "" });
+        } else if (result.includes("⚡")) {
+          resolve({ summary: result, command: "" });
+        } else {
+          resolve(fallback);
+        }
+      });
+
+      proc.on("error", () => { if (!settled) { settled = true; resolve(fallback); } });
+      setTimeout(() => { if (!settled) { settled = true; try { proc.kill(); } catch {} resolve(fallback); } }, 15000);
     });
   }
 
@@ -312,9 +499,22 @@ User request: """${userText}"""`;
     });
   }
 
+  // ── Core system prompt (shared by Claude and Codex) ──
+
+  const corePrompt = `You are chatting via Telegram. Keep responses short and direct — this is a mobile chat, not a terminal.
+
+CRITICAL RULES:
+1. NEVER run "find" commands searching the entire filesystem. NEVER do global searches like "find / ..." or "find /Users ...". These are slow and wasteful.
+2. If you don't know where something is (a repo, a file, a project), ASK the user. Say something like "Where is the repo? Give me the path or the GitHub URL."
+3. If the user mentions a repo name, check if it exists in the current working directory first. If not, ASK — do not search.
+4. Prefer quick answers: git log, gh commands, simple checks. Not filesystem scans.
+5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.
+6. You have access to ALL available tools. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.
+7. For questions about weather, news, current events, stock prices, or ANY real-time information: you MUST use WebSearch or WebFetch to look it up. NEVER say you don't have access to real-time data — you DO, via these tools. Use them.`;
+
   // ── Call Claude Code CLI ──
 
-  function callClaude(prompt: string, chatId: number, skipPerms: boolean, extraSystemPrompt?: string | null): Promise<ClaudeResult> {
+  function callClaude(prompt: string, chatId: number, skipPerms: boolean, extraSystemPrompt?: string | null): Promise<AgentResult> {
     return new Promise((resolve, reject) => {
       const args: string[] = [
         "-p",
@@ -324,18 +524,6 @@ User request: """${userText}"""`;
       ];
       if (skipPerms) args.push("--dangerously-skip-permissions");
       if (config.model) args.push("--model", config.model);
-
-      // Core behavior: clarify before acting on ambiguous requests
-      const corePrompt = `You are chatting via Telegram. Keep responses short and direct — this is a mobile chat, not a terminal.
-
-CRITICAL RULES:
-1. NEVER run "find" commands searching the entire filesystem. NEVER do global searches like "find / ..." or "find /Users ...". These are slow and wasteful.
-2. If you don't know where something is (a repo, a file, a project), ASK the user. Say something like "Where is the repo? Give me the path or the GitHub URL."
-3. If the user mentions a repo name, check if it exists in the current working directory first. If not, ASK — do not search.
-4. Prefer quick answers: git log, gh commands, simple checks. Not filesystem scans.
-5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.
-6. You have access to ALL Claude Code tools: Read, Write, Edit, Bash, Glob, Grep, WebSearch, WebFetch, Agent, and more. Use whatever tool is appropriate for the task. Do NOT tell the user you lack access to something — try using the tool first.
-7. For questions about weather, news, current events, stock prices, or ANY real-time information: you MUST use WebSearch or WebFetch to look it up. NEVER say you don't have access to real-time data — you DO, via these tools. Use them.`;
 
       // Combine core + user system prompt + extra (e.g. file sending instructions)
       const sysPromptParts = [corePrompt, config.systemPrompt, extraSystemPrompt].filter(Boolean) as string[];
@@ -577,6 +765,178 @@ CRITICAL RULES:
     });
   }
 
+  // ── Call Codex CLI ──
+
+  function callCodex(prompt: string, chatId: number, extraSystemPrompt?: string | null): Promise<AgentResult> {
+    return new Promise((resolve, reject) => {
+      const codexFileDeliveryReinforcement = `
+CRITICAL — FILE DELIVERY VIA TELEGRAM:
+You are running inside a Telegram bot. You CANNOT send files directly to the user.
+The ONLY way to deliver a file is by including this exact tag in your text response:
+[SEND_FILE:/absolute/path/to/file]
+
+Example response: "Here is your file! [SEND_FILE:/Users/jones/Desktop/codex.txt]"
+
+The bot system will parse this tag and send the file. Without it, the file will NOT arrive.
+Do NOT ask the user for a chat_id. Do NOT say you can't send files. Just include the tag.
+The current chat ID is: ${chatId}`;
+
+      const fullPrompt = extraSystemPrompt
+        ? `${corePrompt}\n\n${codexFileDeliveryReinforcement}\n\n${extraSystemPrompt}\n\nUser message: ${prompt}`
+        : `${corePrompt}\n\n${codexFileDeliveryReinforcement}\n\nUser message: ${prompt}`;
+
+      const args: string[] = ["exec"];
+
+      // Session resume — flags must come before positional args
+      const activeSessionId = getActiveSession(chatId);
+      if (activeSessionId) {
+        args.push("resume",
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+        );
+        if (config.model) args.push("-m", config.model);
+        args.push(activeSessionId, fullPrompt);
+      } else {
+        args.push(
+          "--json",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--skip-git-repo-check",
+          "--search",
+          "-C", config.workingDir,
+        );
+        if (config.model) args.push("-m", config.model);
+        args.push(fullPrompt);
+      }
+
+      const proc = spawn("codex", args, {
+        env: { ...process.env },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let resultText = "";
+      const activities: string[] = [];
+      let threadId: string | null = null;
+      let lineBuf = "";
+      let stderr = "";
+      let settled = false;
+      let lastActivityCount = 0;
+
+      let idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
+
+      function resetIdle(): void {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => killIdle(), IDLE_TIMEOUT);
+      }
+
+      function killIdle(): void {
+        if (!settled) {
+          proc.kill("SIGTERM");
+          cleanup();
+          reject(new Error("codex timed out (no output for 3 min)"));
+        }
+      }
+
+      function handleCodexEvent(line: string): void {
+        if (!line.trim()) return;
+        try {
+          const ev = JSON.parse(line) as Record<string, unknown>;
+
+          if (ev.type === "thread.started") {
+            threadId = ev.thread_id as string;
+          }
+
+          if (ev.type === "item.completed") {
+            const item = ev.item as Record<string, unknown>;
+            if (item.type === "agent_message" && item.text) {
+              resultText = item.text as string;
+            } else if (item.type === "command_execution") {
+              const cmd = (item.command as string) || "";
+              // Extract the actual command from shell wrapper
+              const innerMatch = cmd.match(/"([^"]+)"/);
+              const displayCmd = innerMatch ? innerMatch[1] : cmd;
+              const shortCmd = displayCmd.length > 80 ? displayCmd.slice(0, 80) + "..." : displayCmd;
+              console.log(`[${new Date().toISOString()}] ⚡ codex: ${shortCmd}`);
+              activities.push(`⚡ ${shortCmd}`);
+              if (activities.length > 10) activities.splice(0, activities.length - 10);
+            }
+          }
+
+          if (ev.type === "item.started") {
+            const item = ev.item as Record<string, unknown>;
+            if (item.type === "command_execution") {
+              console.log(`[${new Date().toISOString()}] 🔧 codex running command...`);
+            }
+          }
+
+          if (ev.type === "turn.completed") {
+            const usage = ev.usage as Record<string, unknown> | undefined;
+            if (usage) {
+              console.log(`[${new Date().toISOString()}] 📊 tokens: ${usage.input_tokens}in/${usage.output_tokens}out`);
+            }
+          }
+        } catch {}
+      }
+
+      // Progress updates
+      const progressTimer = setInterval(async () => {
+        if (settled) return;
+        if (activities.length === lastActivityCount) return;
+        const newActs = activities.slice(lastActivityCount);
+        lastActivityCount = activities.length;
+        const log = newActs.join("\n");
+        if (log.trim()) {
+          try { await bot.sendMessage(chatId, log); } catch {}
+        }
+      }, PROGRESS_INTERVAL);
+
+      function cleanup(): void {
+        settled = true;
+        clearTimeout(idleTimer);
+        clearInterval(progressTimer);
+      }
+
+      proc.stdout!.on("data", (chunk: Buffer) => {
+        resetIdle();
+        lineBuf += chunk.toString();
+        const lines = lineBuf.split("\n");
+        lineBuf = lines.pop()!;
+        for (const line of lines) handleCodexEvent(line);
+      });
+
+      proc.stderr!.on("data", (d: Buffer) => {
+        stderr += d;
+        resetIdle();
+      });
+
+      proc.on("close", (code: number | null) => {
+        if (settled) return;
+        if (lineBuf.trim()) handleCodexEvent(lineBuf);
+        cleanup();
+
+        // Save Codex session for resume
+        if (threadId) {
+          setActiveSession(chatId, threadId);
+        }
+
+        if (code === 0 || resultText.trim()) {
+          const finalText = resultText.trim();
+          const preview = finalText.length > 500 ? finalText.slice(0, 500) + "..." : finalText;
+          console.log(`[${new Date().toISOString()}] 💬 response: ${preview}`);
+          resolve({ text: finalText, files: [] });
+        } else {
+          reject(new Error(`codex exit ${code}: ${stderr}`));
+        }
+      });
+
+      proc.on("error", (err: Error) => {
+        if (settled) return;
+        cleanup();
+        reject(err);
+      });
+    });
+  }
+
   function splitMessage(text: string, maxLen: number = 4000): string[] {
     const parts: string[] = [];
     while (text.length > 0) {
@@ -777,6 +1137,12 @@ CRITICAL RULES:
 
     console.log(`[${new Date().toISOString()}] 📩 ${m.from?.username}: "${text}"`);
 
+    // Typing indicator — send immediately so user sees feedback
+    bot.sendChatAction(chatId, "typing").catch(() => {});
+    const typingInterval = setInterval(() => {
+      bot.sendChatAction(chatId, "typing").catch(() => {});
+    }, 4000);
+
     // ── Destructive operation guard — always confirm deletions ──
     const destructivePattern = /\b(rm\s|rm\b|remov|delet|apag|exclu|elimin|drop\s|drop\b|wipe|limpar|borrar|format)/i;
     const isDestructive = destructivePattern.test(text!);
@@ -802,16 +1168,21 @@ CRITICAL RULES:
       skipPerms = true;
     } else if (!skipPerms) {
       console.log(`[${new Date().toISOString()}] 🛡️  approval mode — classifying intent...`);
-      const intent: IntentClassification = await classifyIntent(text!);
+      const intent: IntentClassification = await classifyIntent(text!, chatId);
 
       if (intent === "action") {
-        console.log(`[${new Date().toISOString()}] 🔐 action detected — asking user for approval`);
-        const approved: boolean = await requestApproval(chatId, text!);
+        console.log(`[${new Date().toISOString()}] 🔐 action detected — resolving plan for approval...`);
+        const actionPlan = await resolveActionPlan(text!, chatId);
+        const approved: boolean = await requestApproval(chatId, actionPlan.summary);
         if (!approved) {
           console.log(`[${new Date().toISOString()}] ❌ ${m.from?.username}: denied → skipping`);
           return;
         }
         console.log(`[${new Date().toISOString()}] ✅ ${m.from?.username}: approved → running with --dangerously-skip-permissions`);
+        if (actionPlan.command) {
+          text = `Execute EXACTLY this command, nothing else: ${actionPlan.command}`;
+          console.log(`[${new Date().toISOString()}] 🔒 using pre-approved command: ${actionPlan.command}`);
+        }
         skipPerms = true;
       } else if (intent === "send_file") {
         console.log(`[${new Date().toISOString()}] 📎 send_file detected — will deliver files after response`);
@@ -823,11 +1194,6 @@ CRITICAL RULES:
     } else {
       console.log(`[${new Date().toISOString()}] ⚡ autonomous mode — skipping classification`);
     }
-
-    bot.sendChatAction(chatId, "typing");
-    const typingInterval = setInterval(() => {
-      bot.sendChatAction(chatId, "typing").catch(() => {});
-    }, 4000);
 
     // Build extra system prompt for file sending and cross-chat messaging
     let extraSysPrompt: string | null = null;
@@ -885,8 +1251,11 @@ ${fileList}`;
     }
 
     await withChatLock(chatId, async () => {
+      const provider = getProvider(config.model);
       try {
-        const { text: response, files } = await callClaude(text!, chatId, skipPerms, extraSysPrompt);
+        const { text: response, files } = provider === "codex"
+          ? await callCodex(text!, chatId, extraSysPrompt)
+          : await callClaude(text!, chatId, skipPerms, extraSysPrompt);
         clearInterval(typingInterval);
 
         if (wantsFiles) {
@@ -1004,7 +1373,9 @@ ${fileList}`;
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
           clearActiveSession(chatId);
           try {
-            const { text: retryResponse } = await callClaude(text!, chatId, skipPerms);
+            const { text: retryResponse } = provider === "codex"
+              ? await callCodex(text!, chatId)
+              : await callClaude(text!, chatId, skipPerms);
             if (retryResponse) {
               const parts = splitMessage(retryResponse);
               for (const part of parts) {
