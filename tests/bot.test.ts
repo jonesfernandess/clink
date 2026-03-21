@@ -151,3 +151,47 @@ describe("intent classification mapping", () => {
     expect(classifyResult("CHAT SEND_FILE")).toBe("send_file");
   });
 });
+
+describe("destructive operation detection", () => {
+  const destructivePattern = /\b(rm\s|rm\b|remov|delet|apag|exclu|elimin|drop\s|drop\b|wipe|limpar|borrar|format)/i;
+
+  function isDestructive(text: string): boolean {
+    return destructivePattern.test(text);
+  }
+
+  it("detects rm commands", () => {
+    expect(isDestructive("rm /tmp/test.txt")).toBe(true);
+    expect(isDestructive("quero que remova os 2")).toBe(true);
+  });
+
+  it("detects delete in English", () => {
+    expect(isDestructive("delete that file")).toBe(true);
+    expect(isDestructive("remove the folder")).toBe(true);
+  });
+
+  it("detects delete in Portuguese", () => {
+    expect(isDestructive("apague o arquivo")).toBe(true);
+    expect(isDestructive("exclua isso")).toBe(true);
+    expect(isDestructive("elimine os logs")).toBe(true);
+  });
+
+  it("detects delete in Spanish", () => {
+    expect(isDestructive("borrar el archivo")).toBe(true);
+    expect(isDestructive("eliminar todo")).toBe(true);
+  });
+
+  it("detects other destructive keywords", () => {
+    expect(isDestructive("drop the database")).toBe(true);
+    expect(isDestructive("wipe the disk")).toBe(true);
+    expect(isDestructive("format the drive")).toBe(true);
+    expect(isDestructive("limpar tudo")).toBe(true);
+  });
+
+  it("does not flag safe operations", () => {
+    expect(isDestructive("crie um arquivo")).toBe(false);
+    expect(isDestructive("list files")).toBe(false);
+    expect(isDestructive("show me the readme")).toBe(false);
+    expect(isDestructive("qual é a previsão do tempo")).toBe(false);
+    expect(isDestructive("edit the config")).toBe(false);
+  });
+});

@@ -679,11 +679,24 @@ CRITICAL RULES:
 
     console.log(`[${new Date().toISOString()}] 📩 ${m.from?.username}: "${text}"`);
 
+    // ── Destructive operation guard — always confirm deletions ──
+    const destructivePattern = /\b(rm\s|rm\b|remov|delet|apag|exclu|elimin|drop\s|drop\b|wipe|limpar|borrar|format)/i;
+    const isDestructive = destructivePattern.test(text!);
+
     // ── Smart approval: classify intent, only ask for actions ──
     let skipPerms: boolean = config.skipPermissions;
     let wantsFiles = false;
 
-    if (!skipPerms) {
+    if (isDestructive) {
+      console.log(`[${new Date().toISOString()}] 🗑️  destructive operation detected — requesting confirmation`);
+      const approved: boolean = await requestApproval(chatId, text!);
+      if (!approved) {
+        console.log(`[${new Date().toISOString()}] ❌ ${m.from?.username}: denied destructive operation`);
+        return;
+      }
+      console.log(`[${new Date().toISOString()}] ✅ ${m.from?.username}: approved destructive operation`);
+      skipPerms = true;
+    } else if (!skipPerms) {
       console.log(`[${new Date().toISOString()}] 🛡️  approval mode — classifying intent...`);
       const intent: IntentClassification = await classifyIntent(text!);
 
