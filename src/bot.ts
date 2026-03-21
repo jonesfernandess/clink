@@ -188,12 +188,20 @@ Classification:`;
 
   function resolveDestructiveImpact(userText: string, chatId: number): Promise<DestructivePlan> {
     return new Promise((resolve) => {
+      const recentFiles = chatFiles.get(chatId) || [];
+      const recentContext = recentFiles.length > 0
+        ? `\nFiles recently created/edited in this session:\n${recentFiles.map(f => `  - ${f}`).join("\n")}`
+        : "";
+
       const resolvePrompt = `The user wants to perform a destructive operation. Your job is to:
 1. Figure out EXACTLY which files or folders will be affected (use Glob, Bash ls, etc.)
 2. Determine the EXACT shell command(s) needed to perform the operation
 
 User request: """${userText}"""
 Working directory: ${config.workingDir}
+${recentContext}
+
+IMPORTANT: If the user says "this file", "that file", "esse arquivo", etc., they are referring to the most recently created/edited file listed above. Resolve the reference to the actual absolute path.
 
 Respond with ONLY this exact format — no extra text, no explanation:
 
