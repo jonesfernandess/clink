@@ -129,6 +129,13 @@ step "Installing dependencies..."
 npm install --silent 2>/dev/null
 info "Dependencies installed"
 
+# Build TypeScript (if tsconfig exists)
+if [ -f "tsconfig.json" ]; then
+  step "Building TypeScript..."
+  npm run build --silent 2>/dev/null || true
+  info "Build complete"
+fi
+
 # Install globally
 step "Installing globally..."
 npm install -g . --silent 2>/dev/null

@@ -1,31 +1,44 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+} from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { CONFIG_DIR } from "./config.js";
+import type { SessionEntry, ActiveSessionMap } from "./types.js";
 
 const ACTIVE_SESSIONS_FILE = join(CONFIG_DIR, "active-sessions.json");
 
 // ── Path encoding (matches Claude CLI convention) ──
 
-function encodeProjectPath(dir) {
+function encodeProjectPath(dir: string): string {
   return dir.replace(/\//g, "-");
 }
 
-function projectDir(workingDir) {
-  return join(homedir(), ".claude", "projects", encodeProjectPath(workingDir));
+function projectDir(workingDir: string): string {
+  return join(
+    homedir(),
+    ".claude",
+    "projects",
+    encodeProjectPath(workingDir),
+  );
 }
 
 // ── Parse a .jsonl session file for metadata ──
 
-function parseSessionFile(filePath) {
+function parseSessionFile(filePath: string): SessionEntry | null {
   try {
     const content = readFileSync(filePath, "utf-8").trim();
     if (!content) return null;
     const lines = content.split("\n");
 
-    let sessionId = null;
-    let firstPrompt = null;
-    let firstTimestamp = null;
+    let sessionId: string | null = null;
+    let firstPrompt: string | null = null;
+    let firstTimestamp: string | null = null;
     let messageCount = 0;
 
     for (const line of lines) {
@@ -58,9 +71,9 @@ function parseSessionFile(filePath) {
   }
 }
 
-// ── Active session pointers (chatId → sessionId) ──
+// ── Active session pointers (chatId -> sessionId) ──
 
-function loadActiveMap() {
+function loadActiveMap(): ActiveSessionMap {
   if (!existsSync(ACTIVE_SESSIONS_FILE)) return {};
   try {
     return JSON.parse(readFileSync(ACTIVE_SESSIONS_FILE, "utf-8"));
@@ -69,31 +82,34 @@ function loadActiveMap() {
   }
 }
 
-function saveActiveMap(map) {
+function saveActiveMap(map: ActiveSessionMap): void {
   mkdirSync(CONFIG_DIR, { recursive: true });
   writeFileSync(ACTIVE_SESSIONS_FILE, JSON.stringify(map, null, 2));
 }
 
 // ── Public API ──
 
-export function getActiveSession(chatId) {
+export function getActiveSession(chatId: number): string | null {
   const map = loadActiveMap();
   return map[String(chatId)] || null;
 }
 
-export function setActiveSession(chatId, sessionId) {
+export function setActiveSession(chatId: number, sessionId: string): void {
   const map = loadActiveMap();
   map[String(chatId)] = sessionId;
   saveActiveMap(map);
 }
 
-export function clearActiveSession(chatId) {
+export function clearActiveSession(chatId: number): void {
   const map = loadActiveMap();
   delete map[String(chatId)];
   saveActiveMap(map);
 }
 
-export function listClaudeSessions(workingDir, limit = 15) {
+export function listClaudeSessions(
+  workingDir: string,
+  limit: number = 15,
+): SessionEntry[] {
   const dir = projectDir(workingDir);
   if (!existsSync(dir)) return [];
   try {
@@ -105,7 +121,7 @@ export function listClaudeSessions(workingDir, limit = 15) {
     });
     withMtime.sort((a, b) => b.mtime - a.mtime);
 
-    const sessions = [];
+    const sessions: SessionEntry[] = [];
     for (const { file } of withMtime) {
       const entry = parseSessionFile(file);
       if (entry && entry.messageCount > 0) sessions.push(entry);
@@ -117,7 +133,10 @@ export function listClaudeSessions(workingDir, limit = 15) {
   }
 }
 
-export function findSession(workingDir, sessionId) {
+export function findSession(
+  workingDir: string,
+  sessionId: string,
+): SessionEntry | null {
   const filePath = join(projectDir(workingDir), `${sessionId}.jsonl`);
   if (!existsSync(filePath)) return null;
   return parseSessionFile(filePath);

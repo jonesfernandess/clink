@@ -3,11 +3,12 @@ import chalk from "chalk";
 import { execSync } from "child_process";
 import { loadConfig, saveConfig } from "./config.js";
 import { t, LANGUAGE_NAMES } from "./i18n.js";
+import type { ClinkConfig, Messages, SupportedLanguage } from "./types.js";
 
 const accent = chalk.hex("#FF5A2D");
 const dim = chalk.dim;
 
-function checkClaude() {
+function checkClaude(): { installed: boolean; version: string | null } {
   try {
     const version = execSync("claude --version 2>/dev/null", { encoding: "utf-8" }).trim();
     return { installed: true, version };
@@ -16,7 +17,7 @@ function checkClaude() {
   }
 }
 
-function checkClaudeAuth() {
+function checkClaudeAuth(): boolean {
   try {
     const result = execSync('claude --print "ping" 2>/dev/null', {
       encoding: "utf-8",
@@ -28,10 +29,9 @@ function checkClaudeAuth() {
   }
 }
 
-export async function runWizard() {
-  const config = loadConfig();
+export async function runWizard(): Promise<"start" | "menu"> {
+  const config: ClinkConfig = loadConfig();
 
-  // Step 0: Language (always ask first, in English)
   const lang = await p.select({
     message: "Choose your language / Escolha seu idioma / Elige tu idioma",
     options: Object.entries(LANGUAGE_NAMES).map(([value, label]) => ({ value, label })),
@@ -43,9 +43,9 @@ export async function runWizard() {
     process.exit(0);
   }
 
-  config.language = lang;
+  config.language = lang as SupportedLanguage;
   saveConfig(config);
-  const msg = t(lang);
+  const msg: Messages = t(lang as string);
 
   p.log.step(accent(msg.wizardWelcome));
   console.log("");
@@ -90,11 +90,11 @@ export async function runWizard() {
     process.exit(1);
   }
 
-  p.log.success(`${msg.wizardClaudeFound} ${dim(msg.wizardClaudeVersion(claude.version))}`);
+  p.log.success(`${msg.wizardClaudeFound} ${dim(msg.wizardClaudeVersion(claude.version!))}`);
 
   const s = p.spinner();
   s.start(dim("Checking authentication..."));
-  const authed = checkClaudeAuth();
+  const authed: boolean = checkClaudeAuth();
   s.stop(authed ? msg.wizardClaudeAuth : msg.wizardClaudeNotAuth);
 
   if (!authed) {
@@ -117,7 +117,7 @@ export async function runWizard() {
     message: msg.tokenPrompt,
     placeholder: msg.tokenPlaceholder,
     validate: (v) => {
-      if (!v.trim()) return msg.tokenRequired;
+      if (!v || !v.trim()) return msg.tokenRequired;
       if (!v.includes(":")) return msg.tokenInvalid;
     },
   });
@@ -127,7 +127,7 @@ export async function runWizard() {
     process.exit(0);
   }
 
-  config.token = token.trim();
+  config.token = (token as string).trim();
   saveConfig(config);
   p.log.success(msg.tokenSaved);
   console.log("");
@@ -142,8 +142,8 @@ export async function runWizard() {
   const userAction = await p.select({
     message: msg.manageUsers,
     options: [
-      { value: "add", label: msg.addUser },
-      { value: "skip", label: msg.wizardUserSkip },
+      { value: "add" as const, label: msg.addUser },
+      { value: "skip" as const, label: msg.wizardUserSkip },
     ],
   });
 
@@ -157,16 +157,16 @@ export async function runWizard() {
       message: msg.userIdPrompt,
       placeholder: msg.userIdPlaceholder,
       validate: (v) => {
-        if (!v.trim() || isNaN(Number(v.trim()))) return msg.userIdInvalid;
+        if (!v || !v.trim() || isNaN(Number(v.trim()))) return msg.userIdInvalid;
       },
     });
 
     if (!p.isCancel(userId)) {
-      const id = Number(userId.trim());
+      const id: number = Number((userId as string).trim());
       if (!config.allowedUsers.includes(id)) {
         config.allowedUsers.push(id);
         saveConfig(config);
-        p.log.success(msg.userAdded(accent(id)));
+        p.log.success(msg.userAdded(accent(String(id))));
       }
     }
   } else {
@@ -184,9 +184,9 @@ export async function runWizard() {
   const model = await p.select({
     message: msg.modelPrompt,
     options: [
-      { value: "sonnet", label: "Sonnet", hint: msg.sonnetHint },
-      { value: "opus", label: "Opus", hint: msg.opusHint },
-      { value: "haiku", label: "Haiku", hint: msg.haikuHint },
+      { value: "sonnet" as const, label: "Sonnet", hint: msg.sonnetHint },
+      { value: "opus" as const, label: "Opus", hint: msg.opusHint },
+      { value: "haiku" as const, label: "Haiku", hint: msg.haikuHint },
     ],
     initialValue: config.model || "sonnet",
   });
@@ -196,9 +196,9 @@ export async function runWizard() {
     process.exit(0);
   }
 
-  config.model = model;
+  config.model = model as ClinkConfig["model"];
   saveConfig(config);
-  p.log.success(msg.modelChanged(accent(model)));
+  p.log.success(msg.modelChanged(accent(model as string)));
 
   console.log("");
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
@@ -207,7 +207,6 @@ export async function runWizard() {
   console.log(dim("  ─────────────────────────────────────────────────────────────"));
   console.log("");
 
-  // Ask to start now
   const startNow = await p.confirm({
     message: msg.wizardStartNow || `${msg.menuStart}?`,
   });
