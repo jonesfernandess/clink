@@ -179,6 +179,66 @@ Classification:`;
     });
   }
 
+  // ── Resolve what a destructive operation will affect ──
+
+  function resolveDestructiveImpact(userText: string, chatId: number): Promise<string> {
+    return new Promise((resolve) => {
+      const resolvePrompt = `The user wants to perform a destructive operation. Your job is to figure out EXACTLY which files or folders will be affected and list them with their full absolute paths.
+
+User request: """${userText}"""
+
+INSTRUCTIONS:
+1. Use Glob, Read, or Bash (ls) tools to find the actual files/folders the user is referring to
+2. Respond with ONLY a confirmation message in this exact format — no extra text:
+
+🗑️ Confirm removal:
+- /absolute/path/to/file1
+- /absolute/path/to/file2
+
+If you cannot determine the exact paths, list what the user seems to want to delete based on context.
+Working directory: ${config.workingDir}`;
+
+      const proc = spawn("claude", [
+        "-p", "--model", "haiku",
+        "--dangerously-skip-permissions",
+        resolvePrompt,
+      ], {
+        cwd: config.workingDir,
+        env: { ...process.env, LANG: "en_US.UTF-8" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let output = "";
+      let settled = false;
+
+      proc.stdout!.on("data", (d: Buffer) => output += d);
+
+      proc.on("close", () => {
+        if (settled) return;
+        settled = true;
+        const result = output.trim();
+        if (result && result.includes("/")) {
+          resolve(result);
+        } else {
+          resolve(`🗑️ ${userText}`);
+        }
+      });
+
+      proc.on("error", () => {
+        if (settled) return;
+        settled = true;
+        resolve(`🗑️ ${userText}`);
+      });
+
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { proc.kill(); } catch {}
+        resolve(`🗑️ ${userText}`);
+      }, 15000);
+    });
+  }
+
   // ── Ask for approval via Telegram before running Claude ──
 
   function requestApproval(chatId: number, userText: string): Promise<boolean> {
@@ -688,8 +748,9 @@ CRITICAL RULES:
     let wantsFiles = false;
 
     if (isDestructive) {
-      console.log(`[${new Date().toISOString()}] 🗑️  destructive operation detected — requesting confirmation`);
-      const approved: boolean = await requestApproval(chatId, text!);
+      console.log(`[${new Date().toISOString()}] 🗑️  destructive operation detected — resolving targets...`);
+      const impactSummary = await resolveDestructiveImpact(text!, chatId);
+      const approved: boolean = await requestApproval(chatId, impactSummary);
       if (!approved) {
         console.log(`[${new Date().toISOString()}] ❌ ${m.from?.username}: denied destructive operation`);
         return;
