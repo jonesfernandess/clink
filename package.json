@@ -7,6 +7,8 @@
     "build": "tsc",
     "postbuild": "node -e \"const fs=require('fs');const f='dist/cli.js';fs.writeFileSync(f,'#!/usr/bin/env node\\n'+fs.readFileSync(f,'utf8'))\" && chmod +x dist/cli.js",
     "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "gateway": "node dist/cli.js gateway",
     "start": "node dist/cli.js gateway"
   },
@@ -40,6 +42,7 @@
     "@types/gradient-string": "^1.1.6",
     "@types/node": "^25.5.0",
     "@types/node-telegram-bot-api": "^0.64.14",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
   }
 }
