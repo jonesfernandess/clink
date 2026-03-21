@@ -11,7 +11,7 @@ import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessi
 import { fileURLToPath } from "url";
 import type { ClinkConfig, ClaudeResult, IntentClassification, PendingApproval, Messages } from "./types.js";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const __dirname = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
 // ── Audio transcription via faster-whisper ──
 

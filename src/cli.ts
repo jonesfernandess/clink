@@ -473,7 +473,10 @@ function showHelp(): void {
 // ── Auto-update ──
 
 function getRepoDir(): string {
-  return new URL(".", import.meta.url).pathname.replace(/\/$/, "");
+  const dir = new URL(".", import.meta.url).pathname.replace(/\/$/, "");
+  // When running from dist/, go up one level to the project root
+  if (dir.endsWith("/dist")) return dir.replace(/\/dist$/, "");
+  return dir;
 }
 
 function updateFromMain(): void {
