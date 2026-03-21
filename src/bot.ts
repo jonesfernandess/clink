@@ -634,9 +634,21 @@ CRITICAL RULES:
 
   function callCodex(prompt: string, chatId: number, extraSystemPrompt?: string | null): Promise<AgentResult> {
     return new Promise((resolve, reject) => {
+      const codexFileDeliveryReinforcement = `
+CRITICAL — FILE DELIVERY VIA TELEGRAM:
+You are running inside a Telegram bot. You CANNOT send files directly to the user.
+The ONLY way to deliver a file is by including this exact tag in your text response:
+[SEND_FILE:/absolute/path/to/file]
+
+Example response: "Here is your file! [SEND_FILE:/Users/jones/Desktop/codex.txt]"
+
+The bot system will parse this tag and send the file. Without it, the file will NOT arrive.
+Do NOT ask the user for a chat_id. Do NOT say you can't send files. Just include the tag.
+The current chat ID is: ${chatId}`;
+
       const fullPrompt = extraSystemPrompt
-        ? `${corePrompt}\n\n${extraSystemPrompt}\n\nUser message: ${prompt}`
-        : `${corePrompt}\n\nUser message: ${prompt}`;
+        ? `${corePrompt}\n\n${codexFileDeliveryReinforcement}\n\n${extraSystemPrompt}\n\nUser message: ${prompt}`
+        : `${corePrompt}\n\n${codexFileDeliveryReinforcement}\n\nUser message: ${prompt}`;
 
       const args: string[] = ["exec"];
 
