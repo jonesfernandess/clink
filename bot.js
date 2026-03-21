@@ -111,7 +111,10 @@ export function startBot(configOverride) {
 
 CHAT = greetings, questions, conversation, explanations (no tools needed)
 ACTION = create/edit/delete files, run commands, install packages, git, system changes
-SEND_FILE = user is asking to receive/send/download a file via chat (e.g. "me manda o arquivo", "send me the file", "envia o PDF")
+SEND_FILE = user wants to receive/send/download a file via chat. This includes:
+  - Explicit requests: "me manda o arquivo", "send me the file", "envia o PDF"
+  - File names or paths alone: "test.txt", "report.pdf", "main.py" (user wants that file)
+  - References to files: "o arquivo de ontem", "the config file", "aquele script"
 
 Message: """${userText}"""
 
@@ -234,14 +237,33 @@ Classification:`;
       if (skipPerms) args.push("--dangerously-skip-permissions");
       if (config.model) args.push("--model", config.model);
 
-      // Combine user system prompt + extra (e.g. file sending instructions)
-      const sysPromptParts = [config.systemPrompt, extraSystemPrompt].filter(Boolean);
+      // Core behavior: clarify before acting on ambiguous requests
+      const corePrompt = `You are chatting via Telegram. Keep responses short and direct — this is a mobile chat, not a terminal.
+
+CRITICAL RULES:
+1. NEVER run "find" commands searching the entire filesystem. NEVER do global searches like "find / ..." or "find /Users ...". These are slow and wasteful.
+2. If you don't know where something is (a repo, a file, a project), ASK the user. Say something like "Where is the repo? Give me the path or the GitHub URL."
+3. If the user mentions a repo name, check if it exists in the current working directory first. If not, ASK — do not search.
+4. Prefer quick answers: git log, gh commands, simple checks. Not filesystem scans.
+5. Autonomous mode = no permission needed for tools. It does NOT mean "assume everything and go". You MUST still understand the request before acting.`;
+
+      // Combine core + user system prompt + extra (e.g. file sending instructions)
+      const sysPromptParts = [corePrompt, config.systemPrompt, extraSystemPrompt].filter(Boolean);
       if (sysPromptParts.length > 0) {
         args.push("--append-system-prompt", sysPromptParts.join("\n\n"));
       }
 
-      // Session management: resume active session or assign explicit ID for new ones
+      // Session management: resume active session, auto-resume last, or create new
       let activeSessionId = getActiveSession(chatId);
+      if (!activeSessionId) {
+        // Auto-resume most recent session if one exists
+        const sessions = listClaudeSessions(config.workingDir, 1);
+        if (sessions.length > 0) {
+          activeSessionId = sessions[0].sessionId;
+          setActiveSession(chatId, activeSessionId);
+          console.log(`[${new Date().toISOString()}] 🔄 auto-resumed last session: ${activeSessionId.slice(0, 8)}`);
+        }
+      }
       if (activeSessionId) {
         args.push("--resume", activeSessionId);
       } else {
@@ -285,11 +307,53 @@ Classification:`;
         }
       }
 
-      function addActivity(icon, text) {
-        const ts = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        activities.push(`${icon} [${ts}] ${text}`);
-        // keep last 15 activities
-        if (activities.length > 15) activities = activities.slice(-15);
+      function addActivity(text) {
+        activities.push(text);
+        if (activities.length > 10) activities = activities.slice(-10);
+      }
+
+      // Build a human-readable description of what a tool did
+      function describeToolUse(name, input) {
+        try {
+          const parsed = typeof input === "string" ? JSON.parse(input) : input;
+          switch (name) {
+            case "Read":
+              const file = parsed.file_path?.split("/").pop() || "file";
+              return `📖 Reading ${file}`;
+            case "Edit":
+              const edited = parsed.file_path?.split("/").pop() || "file";
+              return `✏️ Editing ${edited}`;
+            case "Write":
+              const written = parsed.file_path?.split("/").pop() || "file";
+              return `📝 Writing ${written}`;
+            case "Bash": {
+              const cmd = parsed.command || "";
+              // "cat > /long/path/file.py" → "📝 Creating file.py"
+              const catMatch = cmd.match(/^cat\s*>\s*(.+)/);
+              if (catMatch) {
+                const fname = catMatch[1].trim().split("/").pop().split("'")[0].split('"')[0].trim();
+                return `📝 Creating ${fname}`;
+              }
+              // "git ..." → show full git command
+              if (cmd.startsWith("git ")) return `⚡ ${cmd.slice(0, 80)}`;
+              // "cd X && ..." → show the meaningful part
+              const afterCd = cmd.match(/&&\s*(.+)/);
+              if (afterCd) return `⚡ ${afterCd[1].trim().slice(0, 60)}`;
+              return `⚡ ${cmd.slice(0, 60)}`;
+            }
+            case "Grep":
+              return `🔍 Searching: ${(parsed.pattern || "").slice(0, 40)}`;
+            case "Glob":
+              return `📂 Finding: ${(parsed.pattern || "").slice(0, 40)}`;
+            case "Agent":
+              return `🤖 Sub-agent: ${(parsed.description || "working").slice(0, 40)}`;
+            default:
+              if (/^(Task|Todo)/.test(name)) return null; // skip internal tools
+              return `🔧 ${name}`;
+          }
+        } catch {
+          return `🔧 ${name}`;
+        }
       }
 
       // ── parse stream-json events ──
@@ -298,11 +362,6 @@ Classification:`;
 
         let ev;
         try { ev = JSON.parse(line); } catch { return; }
-
-        // system events (init, api retries, etc)
-        if (ev.type === "system") {
-          addActivity("⚙️", ev.message || ev.subtype || "system event");
-        }
 
         if (ev.type === "stream_event") {
           const e = ev.event;
@@ -319,27 +378,26 @@ Classification:`;
             currentTool = name;
             currentToolName = name;
             currentToolInput = "";
-            addActivity("🔧", name);
           }
 
-          // text block started
-          if (e?.type === "content_block_start" && e.content_block?.type === "text") {
-            currentTool = "writing";
-            addActivity("✍️", "Generating text...");
-          }
-
-          // tool input — accumulate to extract file_path
+          // tool input — accumulate
           if (e?.delta?.type === "input_json_delta" && e.delta.partial_json) {
             currentToolInput += e.delta.partial_json;
           }
 
-          // block finished — extract file_path from Write/Edit tools
+          // block finished — log a readable description
           if (e?.type === "content_block_stop") {
-            if (currentToolName && /^(Write|Edit|write|edit)$/.test(currentToolName) && currentToolInput) {
-              try {
-                const input = JSON.parse(currentToolInput);
-                if (input.file_path) createdFiles.push(input.file_path);
-              } catch {}
+            if (currentToolName) {
+              // track created/edited files
+              if (/^(Write|Edit|write|edit)$/.test(currentToolName) && currentToolInput) {
+                try {
+                  const input = JSON.parse(currentToolInput);
+                  if (input.file_path) createdFiles.push(input.file_path);
+                } catch {}
+              }
+              // add readable activity
+              const desc = describeToolUse(currentToolName, currentToolInput);
+              if (desc) addActivity(desc);
             }
             currentTool = null;
             currentToolName = null;
@@ -347,31 +405,10 @@ Classification:`;
           }
         }
 
-        // assistant turn complete
-        if (ev.type === "assistant") {
-          const content = ev.message?.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === "tool_use") {
-                addActivity("🔧", `${block.name}(${summarizeInput(block.input)})`);
-              }
-              if (block.type === "tool_result") {
-                addActivity("✅", `Result received`);
-              }
-            }
-          }
-        }
-
         // final result
         if (ev.type === "result") {
           if (ev.result) resultText = ev.result;
         }
-      }
-
-      function summarizeInput(input) {
-        if (!input) return "";
-        const s = JSON.stringify(input);
-        return s.length > 80 ? s.slice(0, 80) + "…" : s;
       }
 
       // ── periodic progress updates as new messages ──
@@ -387,15 +424,10 @@ Classification:`;
         lastActivityCount = activities.length;
 
         const log = newActivities.join("\n");
-        const preview = resultText.length > 0
-          ? `\n\n📝 (${Math.round(resultText.length / 1024)}kb written)`
-          : "";
-
-        const text = `${log}${preview}`;
-        const truncated = text.length > 4000 ? "…" + text.slice(-4000) : text;
+        if (!log.trim()) return;
 
         try {
-          await bot.sendMessage(chatId, truncated);
+          await bot.sendMessage(chatId, log);
         } catch {}
       }
 
@@ -702,8 +734,20 @@ Rules:
     if (wantsFiles) {
       extraSysPrompt = `${crossChatPrompt}
 
-You can also send files to THIS chat by including [SEND_FILE:/absolute/path] tags in your response.
-Only use absolute paths. You can also use Read/Glob to find files if needed.
+⚠️ FILE DELIVERY INSTRUCTIONS (MANDATORY):
+The user wants to RECEIVE a file in this Telegram chat.
+You are NOT able to send files directly. The ONLY way to deliver a file is by including a special tag in your text response.
+
+REQUIRED STEPS:
+1. Use Read/Glob tools to find the file and confirm its absolute path
+2. Include the tag [SEND_FILE:/absolute/path/to/file] in your response
+3. The system will parse this tag and send the file to Telegram
+
+RULES:
+- Without [SEND_FILE:...] the file will NOT be delivered, no matter what you say
+- Saying 'Enviado', 'Sent', or 'Here is the file' does NOTHING without the tag
+- You MUST use the exact format: [SEND_FILE:/absolute/path]
+- Example: 'Here is your file! [SEND_FILE:/Users/jones/Desktop/test2.txt]'
 
 Files created in this session:
 ${fileList}`;
@@ -715,6 +759,12 @@ ${fileList}`;
       try {
         const { text: response, files } = await callClaude(text, chatId, skipPerms, extraSysPrompt);
         clearInterval(typingInterval);
+
+        if (wantsFiles) {
+          console.log(`[${new Date().toISOString()}] 📎 raw response: "${response.slice(0, 300)}"`);
+          console.log(`[${new Date().toISOString()}] 📎 tracked files: ${JSON.stringify(chatFiles.get(chatId) || [])}`);
+          console.log(`[${new Date().toISOString()}] 📎 created files: ${JSON.stringify(files || [])}`);
+        }
 
         if (!response) {
           await bot.sendMessage(chatId, msg.noResponse);
@@ -728,7 +778,15 @@ ${fileList}`;
         }
 
         // Parse [SEND_FILE:/path] tags from Claude's response
-        const sendFileTags = [...response.matchAll(/\[SEND_FILE:([^\]]+)\]/g)].map((m) => m[1].trim());
+        // Also handle wrong format [SEND_FILE:chatid:/path] where Claude mixed up SEND_FILE and SEND_FILE_TO
+        const sendFileTags = [...response.matchAll(/\[SEND_FILE:([^\]]+)\]/g)].map((m) => {
+          const raw = m[1].trim();
+          const parts = raw.split(":");
+          if (parts.length >= 2 && /^-?\d+$/.test(parts[0].trim()) && parts[1].startsWith("/")) {
+            return parts.slice(1).join(":").trim();
+          }
+          return raw;
+        });
 
         // Parse [SEND_TO:<chatId>:<message>] tags for cross-chat messaging
         const sendToTags = [...response.matchAll(/\[SEND_TO:(-?\d+):([^\]]+)\]/g)].map((m) => ({
@@ -756,6 +814,14 @@ ${fileList}`;
               () => bot.sendMessage(chatId, part)
             );
           }
+        }
+
+        // Warn if Claude failed to include SEND_FILE tag
+        if (wantsFiles && sendFileTags.length === 0 && sendFileToTags.length === 0) {
+          console.log(`[${new Date().toISOString()}] ⚠️ wantsFiles=true but no SEND_FILE tags in response`);
+          await bot.sendMessage(chatId,
+            msg.fileNotDelivered || "⚠️ Claude did not deliver the file. Try being more specific, e.g.: \"send me /Users/jones/Desktop/test2.txt\""
+          );
         }
 
         // Deliver files that Claude requested to send (to current chat)
