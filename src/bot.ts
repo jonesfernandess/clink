@@ -476,6 +476,7 @@ CRITICAL RULES:
             currentTool = name;
             currentToolName = name;
             currentToolInput = "";
+            console.log(`[${new Date().toISOString()}] 🔧 tool: ${name}`);
           }
 
           // tool input — accumulate
@@ -493,9 +494,12 @@ CRITICAL RULES:
                   if (input.file_path) createdFiles.push(input.file_path as string);
                 } catch {}
               }
-              // add readable activity
+              // log tool details to terminal
               const desc = describeToolUse(currentToolName, currentToolInput);
-              if (desc) addActivity(desc);
+              if (desc) {
+                console.log(`[${new Date().toISOString()}]   ${desc}`);
+                addActivity(desc);
+              }
             }
             currentTool = null;
             currentToolName = null;
@@ -554,8 +558,15 @@ CRITICAL RULES:
         if (settled) return;
         if (lineBuf.trim()) handleEvent(lineBuf);
         cleanup();
-        if (code === 0) resolve({ text: resultText.trim(), files: createdFiles });
-        else reject(new Error(`claude exit ${code}: ${stderr}`));
+        const finalText = resultText.trim();
+        if (code === 0) {
+          // Log response to terminal
+          const preview = finalText.length > 500 ? finalText.slice(0, 500) + "..." : finalText;
+          console.log(`[${new Date().toISOString()}] 💬 response: ${preview}`);
+          resolve({ text: finalText, files: createdFiles });
+        } else {
+          reject(new Error(`claude exit ${code}: ${stderr}`));
+        }
       });
 
       proc.on("error", (err: Error) => {
