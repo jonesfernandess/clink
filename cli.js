@@ -449,6 +449,10 @@ function showHelp() {
   console.log(`    clink send --to-group 123 "hi"    Send to a group/channel`);
   console.log(`    clink send                      Interactive mode`);
   console.log("");
+  console.log("  Audio transcription (voice messages):");
+  console.log(`    Requires: ${accent("python3")}, ${accent("faster-whisper")}, ${accent("ffmpeg")}`);
+  console.log(`    pip3 install faster-whisper`);
+  console.log("");
   console.log("  Run without arguments to open the interactive menu.");
   console.log("");
 }

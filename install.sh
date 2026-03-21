@@ -50,6 +50,67 @@ else
   warn "Claude Code CLI not found — install it with: npm install -g @anthropic-ai/claude-code"
 fi
 
+# Install audio transcription dependencies
+step "Installing audio transcription dependencies..."
+
+# ffmpeg
+if command -v ffmpeg &>/dev/null; then
+  info "ffmpeg already installed"
+else
+  if [[ "$(uname)" == "Darwin" ]]; then
+    if command -v brew &>/dev/null; then
+      brew install ffmpeg --quiet
+      info "ffmpeg installed via Homebrew"
+    else
+      warn "Homebrew not found — install ffmpeg manually: https://ffmpeg.org"
+    fi
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get install -y ffmpeg -qq
+    info "ffmpeg installed via apt"
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -y ffmpeg -q
+    info "ffmpeg installed via dnf"
+  else
+    warn "Could not install ffmpeg automatically — install it manually"
+  fi
+fi
+
+# Python3
+if command -v python3 &>/dev/null; then
+  info "Python3 $(python3 --version | cut -d' ' -f2)"
+else
+  if [[ "$(uname)" == "Darwin" ]]; then
+    if command -v brew &>/dev/null; then
+      brew install python3 --quiet
+      info "Python3 installed via Homebrew"
+    else
+      warn "Homebrew not found — install Python3 manually: https://python.org"
+    fi
+  elif command -v apt-get &>/dev/null; then
+    sudo apt-get install -y python3 python3-pip -qq
+    info "Python3 installed via apt"
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -y python3 python3-pip -q
+    info "Python3 installed via dnf"
+  else
+    warn "Could not install Python3 automatically — install it manually"
+  fi
+fi
+
+# faster-whisper
+if command -v python3 &>/dev/null; then
+  if python3 -c "import faster_whisper" &>/dev/null; then
+    info "faster-whisper already installed"
+  else
+    pip3 install faster-whisper --quiet 2>/dev/null || python3 -m pip install faster-whisper --quiet 2>/dev/null
+    if python3 -c "import faster_whisper" &>/dev/null; then
+      info "faster-whisper installed via pip"
+    else
+      warn "Could not install faster-whisper — run: pip3 install faster-whisper"
+    fi
+  fi
+fi
+
 # Clone or update
 step "Installing Clink..."
 if [ -d "$INSTALL_DIR" ]; then
