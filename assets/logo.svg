@@ -7,6 +7,6 @@
     </linearGradient>
   </defs>
   <rect width="720" height="180" rx="16" fill="#0d1117"/>
-  <text x="360" y="105" text-anchor="middle" font-family="monospace, 'Courier New'" font-size="64" font-weight="bold" fill="url(#g)" letter-spacing="6">CLAUDIOGRAM</text>
-  <text x="360" y="140" text-anchor="middle" font-family="monospace, 'Courier New'" font-size="16" fill="#8b949e">Claude Code via Telegram</text>
+  <text x="360" y="105" text-anchor="middle" font-family="monospace, 'Courier New'" font-size="64" font-weight="bold" fill="url(#g)" letter-spacing="6">CLINK</text>
+  <text x="360" y="140" text-anchor="middle" font-family="monospace, 'Courier New'" font-size="16" fill="#8b949e">Claude Linked to Telegram</text>
 </svg>
