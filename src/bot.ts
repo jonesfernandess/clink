@@ -7,7 +7,7 @@ import { tmpdir } from "os";
 import { loadConfig } from "./config.js";
 import { t } from "./i18n.js";
 import { sendFile, sendText } from "./send.js";
-import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession } from "./session.js";
+import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessions, findSession, registerPendingSession, removePendingSession } from "./session.js";
 import { fileURLToPath } from "url";
 import { getProvider } from "./types.js";
 import type { ClinkConfig, AgentResult, IntentClassification, PendingApproval, Messages } from "./types.js";
@@ -186,7 +186,6 @@ Classification:`;
         proc = spawn("claude", [
           "-p", "--model", "haiku",
           "--dangerously-skip-permissions",
-          "--no-session-persistence",
           classifyPrompt,
         ], {
           cwd: config.workingDir,
@@ -211,6 +210,13 @@ Classification:`;
       proc.on("close", (code: number | null) => {
         if (settled) return;
         settled = true;
+
+        // If classifier crashed (auth error, etc.), fall back to CHAT to avoid false approval prompts
+        if (code !== 0) {
+          console.log(`${ts()} 🔍 classifier: exit=${code} stderr="${stderrOut.trim().slice(0, 200)}" → CHAT (error fallback)`);
+          resolve("chat");
+          return;
+        }
 
         // Extract text — Codex returns JSONL, Claude returns plain text
         let raw = output.trim();
@@ -249,16 +255,16 @@ Classification:`;
       proc.on("error", (err: Error) => {
         if (settled) return;
         settled = true;
-        console.log(`${ts()} 🔍 classifier: spawn error: ${err.message} → ACTION (fallback)`);
-        resolve("action");
+        console.log(`${ts()} 🔍 classifier: spawn error: ${err.message} → CHAT (fallback)`);
+        resolve("chat");
       });
 
       setTimeout(() => {
         if (settled) return;
         settled = true;
         try { proc.kill(); } catch {}
-        console.log(`${ts()} 🔍 classifier: timeout (20s) → ACTION (fallback)`);
-        resolve("action");
+        console.log(`${ts()} 🔍 classifier: timeout (20s) → CHAT (fallback)`);
+        resolve("chat");
       }, 20000);
     });
   }
@@ -550,8 +556,12 @@ CRITICAL RULES:
       }
 
       // Session management: resume active session, auto-resume last, or create new
-      let activeSessionId: string | null = getActiveSession(chatId);
-      if (!activeSessionId) {
+      const rawActiveId: string | null = getActiveSession(chatId);
+      // "new" marker means /new was used — force fresh session, skip auto-resume
+      const forceNew = rawActiveId === "new";
+      let activeSessionId: string | null = forceNew ? null : rawActiveId;
+
+      if (!activeSessionId && !forceNew) {
         // Auto-resume most recent session if one exists
         const sessions = listClaudeSessions(config.workingDir, 1);
         if (sessions.length > 0) {
@@ -566,6 +576,7 @@ CRITICAL RULES:
         activeSessionId = randomUUID();
         args.push("--session-id", activeSessionId);
         setActiveSession(chatId, activeSessionId);
+        registerPendingSession(activeSessionId, prompt);
       }
 
       args.push(prompt);
@@ -1009,7 +1020,8 @@ The current chat ID is: ${chatId}`;
 
   bot.onText(/\/new$/, async (m: TelegramBot.Message) => {
     if (!isAllowed(m)) return;
-    clearActiveSession(m.chat.id);
+    // Mark as "new" so callClaude skips auto-resume and creates a fresh session
+    setActiveSession(m.chat.id, "new");
     chatFiles.delete(m.chat.id);
     await bot.sendMessage(m.chat.id, msg.sessionCleared);
     console.log(`[${new Date().toISOString()}] ${m.from?.username}: /new (session cleared)`);

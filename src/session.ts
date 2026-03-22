@@ -12,6 +12,13 @@ import { CONFIG_DIR } from "./config.js";
 import type { SessionEntry, ActiveSessionMap } from "./types.js";
 
 const ACTIVE_SESSIONS_FILE = join(CONFIG_DIR, "active-sessions.json");
+const PENDING_SESSIONS_FILE = join(CONFIG_DIR, "pending-sessions.json");
+
+interface PendingSession {
+  sessionId: string;
+  prompt: string;
+  created: string;
+}
 
 // ── Path encoding (matches Claude CLI convention) ──
 
@@ -26,6 +33,37 @@ function projectDir(workingDir: string): string {
     "projects",
     encodeProjectPath(workingDir),
   );
+}
+
+// ── Ghost session detection (created by classifier/resolver auxiliary spawns) ──
+
+const GHOST_PATTERNS = [
+  /^classify this/i,
+  /^do not execute anything/i,
+  /^reply with a single word/i,
+  /^the user wants to perform a destructive/i,
+];
+
+function isGhostSession(firstPrompt: string): boolean {
+  return GHOST_PATTERNS.some((p) => p.test(firstPrompt));
+}
+
+/** Strip system-injected XML tags and residual system text from session preview */
+function sanitizePreview(text: string): string {
+  // Strip all XML-style tags (including content between known system tags)
+  let clean = text
+    .replace(/<local-command-caveat>[\s\S]*?<\/local-command-caveat>/gi, "")
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, "")
+    .replace(/<command-name>[\s\S]*?<\/command-name>/gi, "")
+    .replace(/<command-message>[\s\S]*?<\/command-message>/gi, "")
+    .replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/gi, "")
+    .replace(/<[^>]+>/g, "")  // catch remaining unpaired tags
+    .trim();
+  // Strip residual system preamble that leaks after tag removal
+  clean = clean.replace(/^Caveat:.*?(\.|\n)/s, "").trim();
+  clean = clean.replace(/^DO NOT respond[^.]*\./s, "").trim();
+  clean = clean.replace(/^comando\s+\S+\s*/i, "").trim();
+  return clean;
 }
 
 // ── Parse a .jsonl session file for metadata ──
@@ -57,10 +95,11 @@ function parseSessionFile(filePath: string): SessionEntry | null {
     if (!sessionId) return null;
 
     const stat = statSync(filePath);
+    const cleanPrompt = sanitizePreview(firstPrompt || "");
     return {
       sessionId,
-      firstPrompt: firstPrompt || "",
-      summary: firstPrompt || "",
+      firstPrompt: cleanPrompt,
+      summary: cleanPrompt,
       messageCount,
       created: firstTimestamp || stat.birthtime.toISOString(),
       modified: stat.mtime.toISOString(),
@@ -87,6 +126,22 @@ function saveActiveMap(map: ActiveSessionMap): void {
   writeFileSync(ACTIVE_SESSIONS_FILE, JSON.stringify(map, null, 2));
 }
 
+// ── Pending sessions (visible before .jsonl exists on disk) ──
+
+function loadPendingMap(): Record<string, PendingSession> {
+  if (!existsSync(PENDING_SESSIONS_FILE)) return {};
+  try {
+    return JSON.parse(readFileSync(PENDING_SESSIONS_FILE, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function savePendingMap(map: Record<string, PendingSession>): void {
+  mkdirSync(CONFIG_DIR, { recursive: true });
+  writeFileSync(PENDING_SESSIONS_FILE, JSON.stringify(map, null, 2));
+}
+
 // ── Public API ──
 
 export function getActiveSession(chatId: number): string | null {
@@ -106,31 +161,76 @@ export function clearActiveSession(chatId: number): void {
   saveActiveMap(map);
 }
 
+export function registerPendingSession(sessionId: string, prompt: string): void {
+  const map = loadPendingMap();
+  map[sessionId] = { sessionId, prompt: prompt.slice(0, 120), created: new Date().toISOString() };
+  savePendingMap(map);
+}
+
+export function removePendingSession(sessionId: string): void {
+  const map = loadPendingMap();
+  if (map[sessionId]) {
+    delete map[sessionId];
+    savePendingMap(map);
+  }
+}
+
 export function listClaudeSessions(
   workingDir: string,
   limit: number = 15,
 ): SessionEntry[] {
   const dir = projectDir(workingDir);
-  if (!existsSync(dir)) return [];
-  try {
-    const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
-    // Sort by mtime desc first (cheap), then only parse the top N
-    const withMtime = files.map((f) => {
-      const full = join(dir, f);
-      return { file: full, mtime: statSync(full).mtimeMs };
-    });
-    withMtime.sort((a, b) => b.mtime - a.mtime);
+  const diskIds = new Set<string>();
+  const sessions: SessionEntry[] = [];
 
-    const sessions: SessionEntry[] = [];
-    for (const { file } of withMtime) {
-      const entry = parseSessionFile(file);
-      if (entry && entry.messageCount > 0) sessions.push(entry);
-      if (sessions.length >= limit) break;
-    }
-    return sessions;
-  } catch {
-    return [];
+  if (existsSync(dir)) {
+    try {
+      const files = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+      const withMtime = files.map((f) => {
+        const full = join(dir, f);
+        return { file: full, mtime: statSync(full).mtimeMs };
+      });
+      withMtime.sort((a, b) => b.mtime - a.mtime);
+
+      for (const { file } of withMtime) {
+        const entry = parseSessionFile(file);
+        if (entry && entry.messageCount > 0 && !isGhostSession(entry.firstPrompt)) {
+          sessions.push(entry);
+          diskIds.add(entry.sessionId);
+        }
+        if (sessions.length >= limit) break;
+      }
+    } catch { /* ignore */ }
   }
+
+  // Merge pending sessions whose .jsonl doesn't exist yet
+  const pending = loadPendingMap();
+  let pendingChanged = false;
+  for (const [id, p] of Object.entries(pending)) {
+    if (diskIds.has(id)) {
+      // .jsonl now exists — pending entry no longer needed
+      delete pending[id];
+      pendingChanged = true;
+      continue;
+    }
+    if (sessions.length < limit) {
+      sessions.push({
+        sessionId: p.sessionId,
+        firstPrompt: sanitizePreview(p.prompt),
+        summary: sanitizePreview(p.prompt),
+        messageCount: 1,
+        created: p.created,
+        modified: p.created,
+        fullPath: "",
+      });
+    }
+  }
+  if (pendingChanged) savePendingMap(pending);
+
+  // Re-sort so pending sessions appear in correct chronological position
+  sessions.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+
+  return sessions.slice(0, limit);
 }
 
 export function findSession(
