@@ -11,6 +11,7 @@ import { getActiveSession, setActiveSession, clearActiveSession, listClaudeSessi
 import { fileURLToPath } from "url";
 import { getProvider } from "./types.js";
 import type { ClinkConfig, AgentResult, IntentClassification, PendingApproval, Messages } from "./types.js";
+import { getAccountEnv, rotateAccount, isQuotaError, getAccountCount, getCurrentAccount, getAccountEmail } from "./accounts.js";
 
 const __dirname = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 
@@ -70,6 +71,11 @@ export function startBot(configOverride?: ClinkConfig): TelegramBot {
   const startTime: number = Date.now();
   const chatLocks: Map<string, Promise<void>> = new Map();
   const pendingApprovals: Map<string, PendingApproval> = new Map();
+
+  // ── Account rotation env helpers ──
+  const claudeEnv = () => ({ ...getAccountEnv("claude"), LANG: "en_US.UTF-8" });
+  const codexEnv = () => getAccountEnv("codex");
+
   const chatFiles: Map<number, string[]> = new Map();
 
   const IDLE_TIMEOUT = 180_000;       // kill after 3 min without ANY stdout data
@@ -164,7 +170,7 @@ Classification:`;
           );
         }
         proc = spawn("codex", args, {
-          env: { ...process.env },
+          env: codexEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
       } else {
@@ -174,7 +180,7 @@ Classification:`;
           classifyPrompt,
         ], {
           cwd: config.workingDir,
-          env: { ...process.env, LANG: "en_US.UTF-8" },
+          env: claudeEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
       }
@@ -297,7 +303,7 @@ User request: """${userText}"""`;
           );
         }
         proc = spawn("codex", args, {
-          env: { ...process.env },
+          env: codexEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
       } else {
@@ -311,7 +317,7 @@ User request: """${userText}"""`;
         args.push(resolvePrompt);
         proc = spawn("claude", args, {
           cwd: config.workingDir,
-          env: { ...process.env, LANG: "en_US.UTF-8" },
+          env: claudeEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
       }
@@ -406,12 +412,12 @@ User request: """${userText}"""`;
         } else {
           args.push("--json", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "-C", config.workingDir, "-m", "gpt-5.1-codex-mini", resolvePrompt);
         }
-        proc = spawn("codex", args, { env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] });
+        proc = spawn("codex", args, { env: codexEnv(), stdio: ["ignore", "pipe", "pipe"] });
       } else {
         const args = ["-p", "--model", "haiku", "--dangerously-skip-permissions"];
         if (activeSessionId) args.push("--resume", activeSessionId);
         args.push(resolvePrompt);
-        proc = spawn("claude", args, { cwd: config.workingDir, env: { ...process.env, LANG: "en_US.UTF-8" }, stdio: ["ignore", "pipe", "pipe"] });
+        proc = spawn("claude", args, { cwd: config.workingDir, env: claudeEnv(), stdio: ["ignore", "pipe", "pipe"] });
       }
 
       let output = "";
@@ -554,7 +560,7 @@ CRITICAL RULES:
 
       const proc = spawn("claude", args, {
         cwd: config.workingDir,
-        env: { ...process.env, LANG: "en_US.UTF-8" },
+        env: claudeEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       });
 
@@ -810,7 +816,7 @@ The current chat ID is: ${chatId}`;
       }
 
       const proc = spawn("codex", args, {
-        env: { ...process.env },
+        env: codexEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       });
 
@@ -1366,10 +1372,57 @@ ${fileList}`;
         console.log(`[${new Date().toISOString()}] -> replied (${response.length} chars)`);
       } catch (err) {
         clearInterval(typingInterval);
-        console.error("Error:", (err as Error).message);
+        const errMsg = (err as Error).message || "";
+        console.error("Error:", errMsg);
+
+        // Quota error → try remaining accounts round-robin
+        if (isQuotaError(errMsg) && getAccountCount(provider) > 1) {
+          const totalAccounts = getAccountCount(provider);
+          let rotated = false;
+
+          for (let attempt = 1; attempt < totalAccounts; attempt++) {
+            const prev = getCurrentAccount(provider);
+            const next = rotateAccount(provider);
+            if (!next) break;
+
+            const prevName = getAccountEmail(prev!) || prev?.label || prev?.id || "?";
+            const nextName = getAccountEmail(next) || next.label || next.id;
+            console.log(`[${new Date().toISOString()}] Quota hit on "${prevName}". Trying "${nextName}" (${attempt}/${totalAccounts - 1})`);
+            await bot.sendMessage(chatId, msg.accountRotated(prevName, nextName)).catch(() => {});
+            clearActiveSession(chatId);
+
+            try {
+              const { text: retryResponse } = provider === "codex"
+                ? await callCodex(text!, chatId)
+                : await callClaude(text!, chatId, skipPerms);
+              if (retryResponse) {
+                const parts = splitMessage(retryResponse);
+                for (const part of parts) {
+                  await bot.sendMessage(chatId, part, { parse_mode: "Markdown" }).catch(
+                    () => bot.sendMessage(chatId, part)
+                  );
+                }
+                console.log(`[${new Date().toISOString()}] -> rotation retry replied (${retryResponse.length} chars)`);
+                rotated = true;
+                break;
+              }
+            } catch (retryErr) {
+              const retryErrMsg = (retryErr as Error).message || "";
+              console.error("Rotation retry error:", retryErrMsg);
+              if (!isQuotaError(retryErrMsg)) break; // non-quota error, stop trying
+            }
+          }
+
+          if (!rotated) {
+            // Advance pointer so next message starts on the account that's had the most time to reset
+            rotateAccount(provider);
+            await bot.sendMessage(chatId, msg.accountAllExhausted).catch(() => {});
+          }
+          return;
+        }
 
         // Session error recovery: if resume failed, clear session and retry
-        if ((err as Error).message && (err as Error).message.includes("session")) {
+        if (errMsg.includes("session")) {
           console.log(`[${new Date().toISOString()}] Session error for chat ${chatId}, retrying fresh...`);
           clearActiveSession(chatId);
           try {
@@ -1391,7 +1444,7 @@ ${fileList}`;
           }
           await bot.sendMessage(chatId, msg.sessionRetry);
         } else {
-          await bot.sendMessage(chatId, `Error: ${(err as Error).message}`);
+          await bot.sendMessage(chatId, `Error: ${errMsg}`);
         }
       }
     });

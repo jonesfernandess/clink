@@ -9,6 +9,18 @@ export function getProvider(model: string): Provider {
   return model.startsWith("gpt-") ? "codex" : "claude";
 }
 
+export interface AccountConfig {
+  id: string;
+  label?: string;
+  configDir?: string;
+  apiKey?: string;
+}
+
+export interface AccountsConfig {
+  claude?: AccountConfig[];
+  codex?: AccountConfig[];
+}
+
 export interface ClinkConfig {
   token: string;
   allowedUsers: number[];
@@ -17,6 +29,8 @@ export interface ClinkConfig {
   workingDir: string;
   skipPermissions: boolean;
   language: SupportedLanguage;
+  accounts?: AccountsConfig;
+  activeAccounts?: { claude?: string; codex?: string };
 }
 
 export interface SessionEntry {
@@ -271,6 +285,40 @@ export interface Messages {
   sendFileNotFound: (f: string) => string;
   sendToFailed: (id: number) => string;
   gatewayBlocked: (id: number, user: string) => string;
+
+  // Accounts
+  menuAccounts: string;
+  accountsTitle: string;
+  accountsList: string;
+  accountAdd: string;
+  accountRemove: string;
+  accountReset: string;
+  accountNone: string;
+  accountProvider: string;
+  accountAuthOAuth: string;
+  accountAuthOAuthHeadless: string;
+  accountAuthApiKey: string;
+  accountLabelPrompt: string;
+  accountLabelPlaceholder: string;
+  accountApiKeyPrompt: string;
+  accountApiKeyPlaceholder: string;
+  accountProvisioning: string;
+  accountLoginRunning: string;
+  accountLoginSuccess: string;
+  accountLoginFailed: string;
+  accountDefaultRegistered: (provider: string) => string;
+  accountAdded: (label: string) => string;
+  accountRemoved: (label: string) => string;
+  accountRotated: (from: string, to: string) => string;
+  accountAllExhausted: string;
+  accountQuotaReset: string;
+  accountRemoveWhich: string;
+  accountActive: string;
+  accountExhausted: string;
+  accountSwitch: string;
+  accountSwitchProvider: string;
+  accountSwitchWhich: string;
+  accountSwitched: (label: string) => string;
 
   // Optional
   fileNotDelivered?: string;
