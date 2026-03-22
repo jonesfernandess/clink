@@ -186,6 +186,7 @@ Classification:`;
         proc = spawn("claude", [
           "-p", "--model", "haiku",
           "--dangerously-skip-permissions",
+          "--no-session-persistence",
           classifyPrompt,
         ], {
           cwd: config.workingDir,
