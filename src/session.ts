@@ -41,6 +41,11 @@ function isGhostSession(firstPrompt: string): boolean {
   return GHOST_PATTERNS.some((p) => p.test(firstPrompt));
 }
 
+/** Strip system-injected XML tags from session preview text */
+function sanitizePreview(text: string): string {
+  return text.replace(/<[^>]+>/g, "").trim();
+}
+
 // ── Parse a .jsonl session file for metadata ──
 
 function parseSessionFile(filePath: string): SessionEntry | null {
@@ -70,10 +75,11 @@ function parseSessionFile(filePath: string): SessionEntry | null {
     if (!sessionId) return null;
 
     const stat = statSync(filePath);
+    const cleanPrompt = sanitizePreview(firstPrompt || "");
     return {
       sessionId,
-      firstPrompt: firstPrompt || "",
-      summary: firstPrompt || "",
+      firstPrompt: cleanPrompt,
+      summary: cleanPrompt,
       messageCount,
       created: firstTimestamp || stat.birthtime.toISOString(),
       modified: stat.mtime.toISOString(),
