@@ -48,6 +48,21 @@ function isGhostSession(firstPrompt: string): boolean {
   return GHOST_PATTERNS.some((p) => p.test(firstPrompt));
 }
 
+/** Detect system-injected user messages that lack isMeta flag */
+const SYSTEM_MSG_PATTERNS = [
+  /^<command-name>/,
+  /^<local-command-stdout>/,
+  /^<local-command-caveat>/,
+  /^<system-reminder>/,
+  /^<command-message>/,
+];
+
+function isSystemMessage(obj: { isMeta?: boolean; message?: { content?: string } }): boolean {
+  if (obj.isMeta) return true;
+  const content = typeof obj.message?.content === "string" ? obj.message.content : "";
+  return SYSTEM_MSG_PATTERNS.some((p) => p.test(content));
+}
+
 /** Strip system-injected XML tags and residual system text from session preview */
 function sanitizePreview(text: string): string {
   // Strip all XML-style tags (including content between known system tags)
@@ -82,7 +97,7 @@ function parseSessionFile(filePath: string): SessionEntry | null {
     for (const line of lines) {
       const obj = JSON.parse(line);
       if (!sessionId && obj.sessionId) sessionId = obj.sessionId;
-      if (obj.type === "user") {
+      if (obj.type === "user" && !isSystemMessage(obj)) {
         messageCount++;
         if (!firstPrompt) {
           const msg = obj.message?.content || obj.message;
