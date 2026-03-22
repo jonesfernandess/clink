@@ -186,7 +186,6 @@ Classification:`;
         proc = spawn("claude", [
           "-p", "--model", "haiku",
           "--dangerously-skip-permissions",
-          "--no-session-persistence",
           classifyPrompt,
         ], {
           cwd: config.workingDir,
@@ -329,7 +328,6 @@ User request: """${userText}"""`;
         const args = [
           "-p", "--model", "haiku",
           "--dangerously-skip-permissions",
-          "--no-session-persistence",
         ];
         if (activeSessionId) {
           args.push("--resume", activeSessionId);
@@ -434,7 +432,7 @@ User request: """${userText}"""`;
         }
         proc = spawn("codex", args, { env: codexEnv(), stdio: ["ignore", "pipe", "pipe"] });
       } else {
-        const args = ["-p", "--model", "haiku", "--dangerously-skip-permissions", "--no-session-persistence"];
+        const args = ["-p", "--model", "haiku", "--dangerously-skip-permissions"];
         if (activeSessionId) args.push("--resume", activeSessionId);
         args.push(resolvePrompt);
         proc = spawn("claude", args, { cwd: config.workingDir, env: claudeEnv(), stdio: ["ignore", "pipe", "pipe"] });
