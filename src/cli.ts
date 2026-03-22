@@ -14,7 +14,12 @@ import { join } from "path";
 import { t, LANGUAGE_NAMES } from "./i18n.js";
 import { runWizard } from "./wizard.js";
 import { listClaudeSessions } from "./session.js";
-import type { ClinkConfig, Messages, GatewayStatus, SupportedLanguage } from "./types.js";
+import {
+  listAccounts, addAccount, removeAccount, ensureDefaultAccount, generateAccountId,
+  provisionCodexAccount, provisionClaudeAccount, runInteractiveLogin,
+  getCurrentAccount, setCurrentAccount, getAccountEmail,
+} from "./accounts.js";
+import type { ClinkConfig, Messages, GatewayStatus, SupportedLanguage, Provider } from "./types.js";
 
 const accent = chalk.hex("#FF5A2D");
 const dim = chalk.dim;
@@ -125,6 +130,7 @@ async function mainMenu(): Promise<void> {
     { value: "users", label: msg.menuUsers, hint: config.allowedUsers.length > 0 ? msg.userCount(config.allowedUsers.length) : msg.allUsers },
     { value: "permissions", label: msg.menuPermissions, hint: config.skipPermissions ? msg.autonomous : msg.askApproval },
     { value: "prompt", label: msg.menuPrompt, hint: config.systemPrompt ? msg.configured : msg.none },
+    { value: "accounts", label: msg.menuAccounts, hint: `${listAccounts().length || 0} accounts` },
     { value: "language", label: msg.menuLanguage, hint: LANGUAGE_NAMES[config.language] || "English" },
     { value: "exit", label: `${chalk.red("✕")} ${msg.menuExit}` },
   );
@@ -149,6 +155,7 @@ async function mainMenu(): Promise<void> {
     case "users": return handleUsers(config, msg);
     case "permissions": return handlePermissions(config, msg);
     case "prompt": return handlePrompt(config, msg);
+    case "accounts": return handleAccounts(config, msg);
     case "language": return handleLanguage(config, msg);
     case "exit":
       p.outro(dim(msg.goodbye));
@@ -231,6 +238,12 @@ async function handleStatus(config: ClinkConfig, msg: Messages): Promise<void> {
     p.log.info(`${msg.gatewayPermissions}: ${config.skipPermissions ? msg.autonomous : msg.askApproval}`);
     p.log.info(`${msg.gatewayAllowed}: ${config.allowedUsers.length > 0 ? config.allowedUsers.join(", ") : msg.allUsers}`);
     p.log.info(`Sessions: ${accent(String(listClaudeSessions(config.workingDir).length))}`);
+    const accountCount = listAccounts().length;
+    if (accountCount > 0) {
+      const provider = config.model.startsWith("gpt-") ? "codex" : "claude";
+      const current = getCurrentAccount(provider as Provider);
+      p.log.info(`Accounts: ${accent(String(accountCount))} (active: ${current?.label || current?.id || "default"})`);
+    }
   } else {
     p.log.info(`Gateway ${chalk.red(msg.stopped)}`);
   }
@@ -476,6 +489,7 @@ function showHelp(): void {
   console.log(`    ${accent("status")}      Show gateway status`);
   console.log(`    ${accent("send")}        Send a message or file to Telegram`);
   console.log(`    ${accent("onboard")}     Run the setup wizard`);
+  console.log(`    ${accent("accounts")}    Manage account rotation`);
   console.log(`    ${accent("update")}      Update to latest version from main`);
   console.log(`    ${accent("help")}        Show this help`);
   console.log("");
@@ -486,6 +500,12 @@ function showHelp(): void {
   console.log(`    clink send --to 123456 "hi"       Send to a specific user/DM`);
   console.log(`    clink send --to-group 123 "hi"    Send to a group/channel`);
   console.log(`    clink send                      Interactive mode`);
+  console.log("");
+  console.log("  Account rotation:");
+  console.log(`    clink accounts             List accounts & status`);
+  console.log(`    clink accounts add         Add a new account`);
+  console.log(`    clink accounts switch      Switch active account`);
+  console.log(`    clink accounts remove      Remove an account`);
   console.log("");
   console.log("  Audio transcription (voice messages):");
   console.log(`    Requires: ${accent("python3")}, ${accent("faster-whisper")}, ${accent("ffmpeg")}`);
@@ -709,6 +729,249 @@ async function handleSend(config: ClinkConfig, msg: Messages): Promise<void> {
   }
 }
 
+// ── Accounts ──
+
+async function handleAccounts(config: ClinkConfig, msg: Messages): Promise<void> {
+  const sub = process.argv[3];
+
+  if (sub === "add") {
+    await handleAccountsAdd(config, msg);
+    return;
+  }
+
+  if (sub === "remove") {
+    await handleAccountsRemove(config, msg);
+    return;
+  }
+
+  if (sub === "switch") {
+    await handleAccountsSwitch(msg);
+    return;
+  }
+
+
+  // Default: interactive accounts menu (loop until back)
+  while (true) {
+    const allAccounts = listAccounts();
+
+    // Show current accounts if any
+    if (allAccounts.length > 0) {
+      console.log(`  ${chalk.bold(msg.accountsTitle)}`);
+      console.log("");
+
+      for (const provider of ["claude", "codex"] as Provider[]) {
+        const accounts = listAccounts(provider);
+        if (accounts.length === 0) continue;
+
+        const current = getCurrentAccount(provider);
+        console.log(`  ${accent(provider.toUpperCase())} (${accounts.length} accounts)`);
+        for (const a of accounts) {
+          const isCurrent = current?.id === a.id;
+          const status = isCurrent ? chalk.green("●") : dim("○");
+          const email = getAccountEmail(a);
+          const label = email || a.label || a.id;
+          const hint = email && a.label ? dim(` (${a.label})`) : !email && a.apiKey ? dim(" (API key)") : "";
+          console.log(`    ${status} ${label}${hint}`);
+        }
+        console.log("");
+      }
+    } else {
+      console.log(`  ${dim(msg.accountNone)}`);
+      console.log("");
+    }
+
+    // Interactive action menu
+    const options: { value: string; label: string }[] = [
+      { value: "add", label: msg.accountAdd },
+    ];
+    if (allAccounts.length > 0) {
+      options.push({ value: "switch", label: msg.accountSwitch });
+      options.push({ value: "remove", label: msg.accountRemove });
+    }
+    options.push({ value: "back", label: msg.back });
+
+    const action = await p.select({
+      message: msg.accountsTitle,
+      options,
+    });
+
+    if (p.isCancel(action) || action === "back") return;
+
+    if (action === "add") {
+      await handleAccountsAdd(config, msg);
+    } else if (action === "switch") {
+      await handleAccountsSwitch(msg);
+    } else if (action === "remove") {
+      await handleAccountsRemove(config, msg);
+    }
+  }
+}
+
+async function handleAccountsSwitch(msg: Messages): Promise<void> {
+  // Determine which providers have accounts
+  const providers = (["claude", "codex"] as Provider[]).filter((p) => listAccounts(p).length > 1);
+
+  if (providers.length === 0) {
+    p.log.warn(msg.accountNone);
+    return;
+  }
+
+  let provider: Provider;
+  if (providers.length === 1) {
+    provider = providers[0];
+  } else {
+    const selected = await p.select({
+      message: msg.accountSwitchProvider,
+      options: providers.map((pr) => ({ value: pr, label: pr.toUpperCase() })),
+    });
+    if (p.isCancel(selected)) return;
+    provider = selected as Provider;
+  }
+
+  const accounts = listAccounts(provider);
+  const current = getCurrentAccount(provider);
+
+  const selected = await p.select({
+    message: msg.accountSwitchWhich,
+    options: accounts.map((a) => {
+      const email = getAccountEmail(a);
+      const name = email || a.label || a.id;
+      const suffix = current?.id === a.id ? chalk.green(" ●") : "";
+      const hint = email && a.label ? a.label : undefined;
+      return { value: a.id, label: `${name}${suffix}`, hint };
+    }),
+  });
+
+  if (p.isCancel(selected)) return;
+
+  setCurrentAccount(provider, selected as string);
+  const account = getCurrentAccount(provider);
+  const switchedEmail = getAccountEmail(account!);
+  p.log.success(msg.accountSwitched(switchedEmail || account?.label || account?.id || "?"));
+}
+
+async function handleAccountsAdd(config: ClinkConfig, msg: Messages): Promise<void> {
+  p.intro(accent.bold(` ${msg.accountAdd} `));
+
+  const provider = await p.select({
+    message: msg.accountProvider,
+    options: [
+      { value: "codex", label: "Codex" },
+      { value: "claude", label: "Claude" },
+    ],
+  }) as Provider;
+
+  if (p.isCancel(provider)) { p.outro(""); return; }
+
+  const authOptions: { value: string; label: string; hint?: string }[] = [
+    { value: "oauth", label: msg.accountAuthOAuth },
+  ];
+  if (provider === "codex") {
+    authOptions.push({ value: "oauth-headless", label: msg.accountAuthOAuthHeadless, hint: "VPS / SSH" });
+  }
+  authOptions.push({ value: "apikey", label: msg.accountAuthApiKey });
+
+  const authType = await p.select({
+    message: "Auth type",
+    options: authOptions,
+  }) as string;
+
+  if (p.isCancel(authType)) { p.outro(""); return; }
+
+  const label = await p.text({
+    message: msg.accountLabelPrompt,
+    placeholder: msg.accountLabelPlaceholder,
+  }) as string;
+
+  if (p.isCancel(label)) { p.outro(""); return; }
+
+  // Ensure default account is registered first
+  const existingAccounts = listAccounts(provider);
+  if (existingAccounts.length === 0) {
+    ensureDefaultAccount(provider);
+    p.log.info(msg.accountDefaultRegistered(provider));
+  }
+
+  const id = generateAccountId(provider);
+
+  if (authType === "oauth" || authType === "oauth-headless") {
+    const s = p.spinner();
+    s.start(msg.accountProvisioning);
+
+    const configDir = provider === "codex"
+      ? provisionCodexAccount(id)
+      : provisionClaudeAccount(id);
+
+    s.stop(chalk.green("✓"));
+
+    p.log.info(msg.accountLoginRunning);
+
+    const success = await runInteractiveLogin(provider, configDir, authType === "oauth-headless");
+
+    if (success) {
+      addAccount(provider, { id, label: label || id, configDir });
+      p.log.success(msg.accountLoginSuccess);
+      p.outro(msg.accountAdded(label || id));
+    } else {
+      p.log.error(msg.accountLoginFailed);
+      p.outro("");
+    }
+  } else {
+    // API key
+    const apiKey = await p.text({
+      message: msg.accountApiKeyPrompt,
+      placeholder: msg.accountApiKeyPlaceholder,
+      validate: (v) => (!v || v.trim().length < 10) ? "Invalid key" : undefined,
+    }) as string;
+
+    if (p.isCancel(apiKey)) { p.outro(""); return; }
+
+    // Still provision a config dir for settings
+    const s = p.spinner();
+    s.start(msg.accountProvisioning);
+
+    const configDir = provider === "codex"
+      ? provisionCodexAccount(id)
+      : provisionClaudeAccount(id);
+
+    s.stop(chalk.green("✓"));
+
+    addAccount(provider, { id, label: label || id, configDir, apiKey: apiKey.trim() });
+    p.outro(msg.accountAdded(label || id));
+  }
+}
+
+async function handleAccountsRemove(config: ClinkConfig, msg: Messages): Promise<void> {
+  const allAccounts = listAccounts();
+  if (allAccounts.length === 0) {
+    console.log(`  ${dim(msg.accountNone)}`);
+    return;
+  }
+
+  const options = allAccounts.map((a) => {
+    const email = getAccountEmail(a);
+    const name = email || a.label || a.id;
+    const hint = email && a.label ? a.label : a.id;
+    return { value: a.id, label: name, hint };
+  });
+
+  const selected = await p.select({
+    message: msg.accountRemoveWhich,
+    options,
+  }) as string;
+
+  if (p.isCancel(selected)) return;
+
+  // Find which provider this account belongs to
+  const claudeAccounts = listAccounts("claude");
+  const provider: Provider = claudeAccounts.some((a) => a.id === selected) ? "claude" : "codex";
+
+  const account = allAccounts.find((a) => a.id === selected);
+  const removedEmail = account ? getAccountEmail(account) : null;
+  removeAccount(provider, selected);
+  p.log.success(msg.accountRemoved(removedEmail || account?.label || selected));
+}
+
 // ── Entry ──
 
 async function main(): Promise<void> {
@@ -740,6 +1003,10 @@ async function main(): Promise<void> {
 
     case "send":
       await handleSend(config, msg);
+      return;
+
+    case "accounts":
+      await handleAccounts(config, msg);
       return;
 
     case "update":
