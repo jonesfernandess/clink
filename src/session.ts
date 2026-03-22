@@ -28,6 +28,18 @@ function projectDir(workingDir: string): string {
   );
 }
 
+// ── Ghost session detection (created by classifier/resolver auxiliary spawns) ──
+
+const GHOST_PATTERNS = [
+  /^classify this/i,
+  /^do not execute anything/i,
+  /^reply with a single word/i,
+];
+
+function isGhostSession(firstPrompt: string): boolean {
+  return GHOST_PATTERNS.some((p) => p.test(firstPrompt));
+}
+
 // ── Parse a .jsonl session file for metadata ──
 
 function parseSessionFile(filePath: string): SessionEntry | null {
@@ -124,7 +136,7 @@ export function listClaudeSessions(
     const sessions: SessionEntry[] = [];
     for (const { file } of withMtime) {
       const entry = parseSessionFile(file);
-      if (entry && entry.messageCount > 0) sessions.push(entry);
+      if (entry && entry.messageCount > 0 && !isGhostSession(entry.firstPrompt)) sessions.push(entry);
       if (sessions.length >= limit) break;
     }
     return sessions;
