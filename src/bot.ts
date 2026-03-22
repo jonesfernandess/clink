@@ -131,6 +131,14 @@ ACTION = any of these:
   - Git operations, system changes
   - Anything that MODIFIES the filesystem or system state
 
+SEARCH = user wants information that requires LIVE web search:
+  - Current events, news, prices, scores, weather
+  - "quanto custa", "cotação", "preço do", "valor do"
+  - "quem ganhou", "resultado do jogo", "placar"
+  - Questions about people, facts, dates that need up-to-date info
+  - "pesquisa sobre", "busca", "search for"
+  - Any question whose answer depends on real-time or recent data
+
 SEND_FILE = user wants to RECEIVE a file attachment in the chat:
   - "me manda o arquivo", "send me the file", "envia o PDF"
   - "mande como anexo", "send as attachment"
@@ -138,6 +146,7 @@ SEND_FILE = user wants to RECEIVE a file attachment in the chat:
   - "o arquivo de ontem", "the config file", "aquele script"
 
 When in doubt between CHAT and ACTION, choose CHAT. Only use ACTION for operations that modify something.
+When in doubt between CHAT and SEARCH, choose SEARCH if the answer likely needs current/real-time data.
 
 Message: """${userText}"""
 
@@ -223,13 +232,15 @@ Classification:`;
         let intent: IntentClassification;
         if (result.includes("SEND_FILE") || result.includes("SEND FILE")) {
           intent = "send_file";
+        } else if (result.includes("SEARCH") && !result.includes("ACTION")) {
+          intent = "search";
         } else if (result.includes("CHAT") && !result.includes("ACTION")) {
           intent = "chat";
         } else {
           intent = "action";
         }
 
-        const icons: Record<IntentClassification, string> = { chat: "CHAT ✓", action: "ACTION 🔐", send_file: "SEND_FILE 📎" };
+        const icons: Record<IntentClassification, string> = { chat: "CHAT ✓", action: "ACTION 🔐", send_file: "SEND_FILE 📎", search: "SEARCH 🔍" };
         console.log(`${ts()} 🔍 classifier: exit=${code} raw="${raw}" stderr="${stderrOut.trim().slice(0, 200)}" → ${icons[intent]}`);
         resolve(intent);
       });
@@ -773,7 +784,7 @@ CRITICAL RULES:
 
   // ── Call Codex CLI ──
 
-  function callCodex(prompt: string, chatId: number, extraSystemPrompt?: string | null): Promise<AgentResult> {
+  function callCodex(prompt: string, chatId: number, extraSystemPrompt?: string | null, search?: boolean): Promise<AgentResult> {
     return new Promise((resolve, reject) => {
       const codexFileDeliveryReinforcement = `
 CRITICAL — FILE DELIVERY VIA TELEGRAM:
@@ -791,7 +802,7 @@ The current chat ID is: ${chatId}`;
         ? `${corePrompt}\n\n${codexFileDeliveryReinforcement}\n\n${extraSystemPrompt}\n\nUser message: ${prompt}`
         : `${corePrompt}\n\n${codexFileDeliveryReinforcement}\n\nUser message: ${prompt}`;
 
-      const args: string[] = ["exec"];
+      const args: string[] = search ? ["--search", "exec"] : ["exec"];
 
       // Session resume — flags must come before positional args
       const activeSessionId = getActiveSession(chatId);
@@ -808,7 +819,6 @@ The current chat ID is: ${chatId}`;
           "--json",
           "--dangerously-bypass-approvals-and-sandbox",
           "--skip-git-repo-check",
-          "--search",
           "-C", config.workingDir,
         );
         if (config.model) args.push("-m", config.model);
@@ -856,6 +866,23 @@ The current chat ID is: ${chatId}`;
             const item = ev.item as Record<string, unknown>;
             if (item.type === "agent_message" && item.text) {
               resultText = item.text as string;
+            } else if (item.type === "web_search") {
+              const action = item.action as Record<string, unknown> | undefined;
+              const queries = action?.queries as string[] | undefined;
+              const query = (action?.query as string) || (item.query as string) || "";
+              if (queries && queries.length > 0) {
+                for (const q of queries) {
+                  const desc = `🌐 Search: ${q.slice(0, 60)}`;
+                  console.log(`[${new Date().toISOString()}] ${desc}`);
+                  activities.push(desc);
+                  if (activities.length > 10) activities.splice(0, activities.length - 10);
+                }
+              } else if (query) {
+                const desc = `🌐 Search: ${query.slice(0, 60)}`;
+                console.log(`[${new Date().toISOString()}] ${desc}`);
+                activities.push(desc);
+                if (activities.length > 10) activities.splice(0, activities.length - 10);
+              }
             } else if (item.type === "command_execution") {
               const cmd = (item.command as string) || "";
               // Extract the actual command from shell wrapper
@@ -872,6 +899,10 @@ The current chat ID is: ${chatId}`;
             const item = ev.item as Record<string, unknown>;
             if (item.type === "command_execution") {
               console.log(`[${new Date().toISOString()}] 🔧 codex running command...`);
+            } else if (item.type === "web_search") {
+              console.log(`[${new Date().toISOString()}] 🌐 searching the web...`);
+              activities.push("🌐 Searching the web...");
+              if (activities.length > 10) activities.splice(0, activities.length - 10);
             }
           }
 
@@ -1156,6 +1187,7 @@ The current chat ID is: ${chatId}`;
     // ── Smart approval: classify intent, only ask for actions ──
     let skipPerms: boolean = config.skipPermissions;
     let wantsFiles = false;
+    let wantsSearch = false;
 
     if (isDestructive) {
       console.log(`[${new Date().toISOString()}] 🗑️  destructive operation detected — resolving targets...`);
@@ -1190,6 +1222,9 @@ The current chat ID is: ${chatId}`;
           console.log(`[${new Date().toISOString()}] 🔒 using pre-approved command: ${actionPlan.command}`);
         }
         skipPerms = true;
+      } else if (intent === "search") {
+        console.log(`[${new Date().toISOString()}] 🔍 search detected — enabling web search tool`);
+        wantsSearch = true;
       } else if (intent === "send_file") {
         console.log(`[${new Date().toISOString()}] 📎 send_file detected — will deliver files after response`);
         wantsFiles = true;
@@ -1260,7 +1295,7 @@ ${fileList}`;
       const provider = getProvider(config.model);
       try {
         const { text: response, files } = provider === "codex"
-          ? await callCodex(text!, chatId, extraSysPrompt)
+          ? await callCodex(text!, chatId, extraSysPrompt, wantsSearch)
           : await callClaude(text!, chatId, skipPerms, extraSysPrompt);
         clearInterval(typingInterval);
 

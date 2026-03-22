@@ -52,7 +52,7 @@ export interface AgentResult {
   files: string[];
 }
 
-export type IntentClassification = "chat" | "action" | "send_file";
+export type IntentClassification = "chat" | "action" | "send_file" | "search";
 
 export interface PendingApproval {
   chatId: number;
