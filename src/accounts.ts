@@ -111,7 +111,12 @@ export function getAccountEnv(provider: Provider): NodeJS.ProcessEnv {
     }
   } else {
     if (account.configDir) {
-      env.CLAUDE_CONFIG_DIR = expandTilde(account.configDir);
+      const resolved = expandTilde(account.configDir);
+      // Only set CLAUDE_CONFIG_DIR for non-default directories;
+      // setting it to ~/.claude breaks auth in Claude CLI
+      if (resolved !== DEFAULT_CLAUDE_HOME) {
+        env.CLAUDE_CONFIG_DIR = resolved;
+      }
     }
     if (account.apiKey) {
       env.ANTHROPIC_API_KEY = account.apiKey;
