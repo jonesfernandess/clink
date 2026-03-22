@@ -34,6 +34,7 @@ const GHOST_PATTERNS = [
   /^classify this/i,
   /^do not execute anything/i,
   /^reply with a single word/i,
+  /^the user wants to perform a destructive/i,
 ];
 
 function isGhostSession(firstPrompt: string): boolean {
